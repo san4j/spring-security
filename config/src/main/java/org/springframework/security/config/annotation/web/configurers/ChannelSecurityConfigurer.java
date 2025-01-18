@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2021 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,10 +22,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 
 import org.springframework.context.ApplicationContext;
-import org.springframework.http.HttpMethod;
 import org.springframework.security.access.ConfigAttribute;
 import org.springframework.security.access.SecurityConfig;
-import org.springframework.security.config.annotation.ObjectPostProcessor;
+import org.springframework.security.config.Customizer;
+import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.config.annotation.SecurityBuilder;
 import org.springframework.security.config.annotation.SecurityConfigurer;
 import org.springframework.security.config.annotation.web.HttpSecurityBuilder;
@@ -41,7 +41,6 @@ import org.springframework.security.web.access.channel.RetryWithHttpEntryPoint;
 import org.springframework.security.web.access.channel.RetryWithHttpsEntryPoint;
 import org.springframework.security.web.access.channel.SecureChannelProcessor;
 import org.springframework.security.web.access.intercept.DefaultFilterInvocationSecurityMetadataSource;
-import org.springframework.security.web.servlet.util.matcher.MvcRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 
 /**
@@ -156,17 +155,6 @@ public final class ChannelSecurityConfigurer<H extends HttpSecurityBuilder<H>>
 		}
 
 		@Override
-		public MvcMatchersRequiresChannelUrl mvcMatchers(HttpMethod method, String... mvcPatterns) {
-			List<MvcRequestMatcher> mvcMatchers = createMvcMatchers(method, mvcPatterns);
-			return new MvcMatchersRequiresChannelUrl(mvcMatchers);
-		}
-
-		@Override
-		public MvcMatchersRequiresChannelUrl mvcMatchers(String... patterns) {
-			return mvcMatchers(null, patterns);
-		}
-
-		@Override
 		protected RequiresChannelUrl chainRequestMatchersInternal(List<RequestMatcher> requestMatchers) {
 			return new RequiresChannelUrl(requestMatchers);
 		}
@@ -177,6 +165,16 @@ public final class ChannelSecurityConfigurer<H extends HttpSecurityBuilder<H>>
 		 * @return the {@link ChannelSecurityConfigurer} for further customizations
 		 */
 		public ChannelRequestMatcherRegistry withObjectPostProcessor(ObjectPostProcessor<?> objectPostProcessor) {
+			addObjectPostProcessor(objectPostProcessor);
+			return this;
+		}
+
+		/**
+		 * @deprecated
+		 */
+		@Deprecated(since = "6.4", forRemoval = true)
+		public ChannelRequestMatcherRegistry withObjectPostProcessor(
+				org.springframework.security.config.annotation.ObjectPostProcessor<?> objectPostProcessor) {
 			addObjectPostProcessor(objectPostProcessor);
 			return this;
 		}
@@ -207,24 +205,12 @@ public final class ChannelSecurityConfigurer<H extends HttpSecurityBuilder<H>>
 		 * Return the {@link SecurityBuilder} when done using the
 		 * {@link SecurityConfigurer}. This is useful for method chaining.
 		 * @return the type of {@link HttpSecurityBuilder} that is being configured
+		 * @deprecated For removal in 7.0. Use
+		 * {@link HttpSecurity#requiresChannel(Customizer)} instead
 		 */
+		@Deprecated(since = "6.1", forRemoval = true)
 		public H and() {
 			return ChannelSecurityConfigurer.this.and();
-		}
-
-	}
-
-	public final class MvcMatchersRequiresChannelUrl extends RequiresChannelUrl {
-
-		private MvcMatchersRequiresChannelUrl(List<MvcRequestMatcher> matchers) {
-			super(matchers);
-		}
-
-		public RequiresChannelUrl servletPath(String servletPath) {
-			for (RequestMatcher matcher : this.requestMatchers) {
-				((MvcRequestMatcher) matcher).setServletPath(servletPath);
-			}
-			return this;
 		}
 
 	}

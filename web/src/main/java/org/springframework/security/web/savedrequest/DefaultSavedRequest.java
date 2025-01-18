@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,6 +37,7 @@ import org.springframework.security.web.PortResolver;
 import org.springframework.security.web.util.UrlUtils;
 import org.springframework.util.Assert;
 import org.springframework.util.ObjectUtils;
+import org.springframework.web.util.UriComponentsBuilder;
 
 /**
  * Represents central information from a {@code HttpServletRequest}.
@@ -225,7 +226,8 @@ public class DefaultSavedRequest implements SavedRequest {
 		if (!propertyEquals(this.pathInfo, request.getPathInfo())) {
 			return false;
 		}
-		if (!propertyEquals(this.queryString, request.getQueryString())) {
+		if (!propertyEquals(createQueryString(this.queryString, this.matchingRequestParameterName),
+				request.getQueryString())) {
 			return false;
 		}
 		if (!propertyEquals(this.requestURI, request.getRequestURI())) {
@@ -352,10 +354,7 @@ public class DefaultSavedRequest implements SavedRequest {
 		if (arg1 == null || arg2 == null) {
 			return false;
 		}
-		if (arg1.equals(arg2)) {
-			return true;
-		}
-		return false;
+		return arg1.equals(arg2);
 	}
 
 	@Override
@@ -370,10 +369,12 @@ public class DefaultSavedRequest implements SavedRequest {
 		if (queryString == null || queryString.length() == 0) {
 			return matchingRequestParameterName;
 		}
-		if (queryString.endsWith("&")) {
-			return queryString + matchingRequestParameterName;
-		}
-		return queryString + "&" + matchingRequestParameterName;
+		return UriComponentsBuilder.newInstance()
+			.query(queryString)
+			.replaceQueryParam(matchingRequestParameterName)
+			.queryParam(matchingRequestParameterName)
+			.build()
+			.getQuery();
 	}
 
 	/**

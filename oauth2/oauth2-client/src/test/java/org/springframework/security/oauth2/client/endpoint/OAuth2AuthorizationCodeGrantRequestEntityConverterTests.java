@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2021 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -64,25 +64,25 @@ public class OAuth2AuthorizationCodeGrantRequestEntityConverterTests {
 	@Test
 	public void setHeadersConverterWhenNullThenThrowIllegalArgumentException() {
 		assertThatIllegalArgumentException().isThrownBy(() -> this.converter.setHeadersConverter(null))
-				.withMessage("headersConverter cannot be null");
+			.withMessage("headersConverter cannot be null");
 	}
 
 	@Test
 	public void addHeadersConverterWhenNullThenThrowIllegalArgumentException() {
 		assertThatIllegalArgumentException().isThrownBy(() -> this.converter.addHeadersConverter(null))
-				.withMessage("headersConverter cannot be null");
+			.withMessage("headersConverter cannot be null");
 	}
 
 	@Test
 	public void setParametersConverterWhenNullThenThrowIllegalArgumentException() {
 		assertThatIllegalArgumentException().isThrownBy(() -> this.converter.setParametersConverter(null))
-				.withMessage("parametersConverter cannot be null");
+			.withMessage("parametersConverter cannot be null");
 	}
 
 	@Test
 	public void addParametersConverterWhenNullThenThrowIllegalArgumentException() {
 		assertThatIllegalArgumentException().isThrownBy(() -> this.converter.addParametersConverter(null))
-				.withMessage("parametersConverter cannot be null");
+			.withMessage("parametersConverter cannot be null");
 	}
 
 	@Test
@@ -122,7 +122,12 @@ public class OAuth2AuthorizationCodeGrantRequestEntityConverterTests {
 	@SuppressWarnings("unchecked")
 	@Test
 	public void convertWhenGrantRequestValidThenConverts() {
-		ClientRegistration clientRegistration = TestClientRegistrations.clientRegistration().build();
+		// @formatter:off
+		ClientRegistration clientRegistration = TestClientRegistrations.clientRegistration()
+				.clientId("clientId")
+				.clientSecret("clientSecret=")
+				.build();
+		// @formatter:on
 		OAuth2AuthorizationExchange authorizationExchange = TestOAuth2AuthorizationExchanges.success();
 		OAuth2AuthorizationRequest authorizationRequest = authorizationExchange.getAuthorizationRequest();
 		OAuth2AuthorizationResponse authorizationResponse = authorizationExchange.getAuthorizationResponse();
@@ -131,33 +136,37 @@ public class OAuth2AuthorizationCodeGrantRequestEntityConverterTests {
 		RequestEntity<?> requestEntity = this.converter.convert(authorizationCodeGrantRequest);
 		assertThat(requestEntity.getMethod()).isEqualTo(HttpMethod.POST);
 		assertThat(requestEntity.getUrl().toASCIIString())
-				.isEqualTo(clientRegistration.getProviderDetails().getTokenUri());
+			.isEqualTo(clientRegistration.getProviderDetails().getTokenUri());
 		HttpHeaders headers = requestEntity.getHeaders();
 		assertThat(headers.getAccept()).contains(MediaType.APPLICATION_JSON_UTF8);
 		assertThat(headers.getContentType())
-				.isEqualTo(MediaType.valueOf(MediaType.APPLICATION_FORM_URLENCODED_VALUE + ";charset=UTF-8"));
-		assertThat(headers.getFirst(HttpHeaders.AUTHORIZATION)).startsWith("Basic ");
+			.isEqualTo(MediaType.valueOf(MediaType.APPLICATION_FORM_URLENCODED_VALUE + ";charset=UTF-8"));
+		assertThat(headers.getFirst(HttpHeaders.AUTHORIZATION)).isEqualTo("Basic Y2xpZW50SWQ6Y2xpZW50U2VjcmV0JTNE");
 		MultiValueMap<String, String> formParameters = (MultiValueMap<String, String>) requestEntity.getBody();
 		assertThat(formParameters.getFirst(OAuth2ParameterNames.GRANT_TYPE))
-				.isEqualTo(AuthorizationGrantType.AUTHORIZATION_CODE.getValue());
+			.isEqualTo(AuthorizationGrantType.AUTHORIZATION_CODE.getValue());
 		assertThat(formParameters.getFirst(OAuth2ParameterNames.CODE)).isEqualTo(authorizationResponse.getCode());
 		assertThat(formParameters.getFirst(OAuth2ParameterNames.CLIENT_ID)).isNull();
 		assertThat(formParameters.getFirst(OAuth2ParameterNames.REDIRECT_URI))
-				.isEqualTo(authorizationRequest.getRedirectUri());
+			.isEqualTo(authorizationRequest.getRedirectUri());
 	}
 
 	@SuppressWarnings("unchecked")
 	@Test
 	public void convertWhenPkceGrantRequestValidThenConverts() {
 		ClientRegistration clientRegistration = TestClientRegistrations.clientRegistration()
-				.clientAuthenticationMethod(null).clientSecret(null).build();
+			.clientAuthenticationMethod(null)
+			.clientSecret(null)
+			.build();
 		Map<String, Object> attributes = new HashMap<>();
 		attributes.put(PkceParameterNames.CODE_VERIFIER, "code-verifier-1234");
 		Map<String, Object> additionalParameters = new HashMap<>();
 		additionalParameters.put(PkceParameterNames.CODE_CHALLENGE, "code-challenge-1234");
 		additionalParameters.put(PkceParameterNames.CODE_CHALLENGE_METHOD, "S256");
 		OAuth2AuthorizationRequest authorizationRequest = TestOAuth2AuthorizationRequests.request()
-				.attributes(attributes).additionalParameters(additionalParameters).build();
+			.attributes(attributes)
+			.additionalParameters(additionalParameters)
+			.build();
 		OAuth2AuthorizationResponse authorizationResponse = TestOAuth2AuthorizationResponses.success().build();
 		OAuth2AuthorizationExchange authorizationExchange = new OAuth2AuthorizationExchange(authorizationRequest,
 				authorizationResponse);
@@ -166,22 +175,22 @@ public class OAuth2AuthorizationCodeGrantRequestEntityConverterTests {
 		RequestEntity<?> requestEntity = this.converter.convert(authorizationCodeGrantRequest);
 		assertThat(requestEntity.getMethod()).isEqualTo(HttpMethod.POST);
 		assertThat(requestEntity.getUrl().toASCIIString())
-				.isEqualTo(clientRegistration.getProviderDetails().getTokenUri());
+			.isEqualTo(clientRegistration.getProviderDetails().getTokenUri());
 		HttpHeaders headers = requestEntity.getHeaders();
 		assertThat(headers.getAccept()).contains(MediaType.APPLICATION_JSON_UTF8);
 		assertThat(headers.getContentType())
-				.isEqualTo(MediaType.valueOf(MediaType.APPLICATION_FORM_URLENCODED_VALUE + ";charset=UTF-8"));
+			.isEqualTo(MediaType.valueOf(MediaType.APPLICATION_FORM_URLENCODED_VALUE + ";charset=UTF-8"));
 		assertThat(headers.getFirst(HttpHeaders.AUTHORIZATION)).isNull();
 		MultiValueMap<String, String> formParameters = (MultiValueMap<String, String>) requestEntity.getBody();
 		assertThat(formParameters.getFirst(OAuth2ParameterNames.GRANT_TYPE))
-				.isEqualTo(AuthorizationGrantType.AUTHORIZATION_CODE.getValue());
+			.isEqualTo(AuthorizationGrantType.AUTHORIZATION_CODE.getValue());
 		assertThat(formParameters.getFirst(OAuth2ParameterNames.CODE)).isEqualTo(authorizationResponse.getCode());
 		assertThat(formParameters.getFirst(OAuth2ParameterNames.REDIRECT_URI))
-				.isEqualTo(authorizationRequest.getRedirectUri());
+			.isEqualTo(authorizationRequest.getRedirectUri());
 		assertThat(formParameters.getFirst(OAuth2ParameterNames.CLIENT_ID))
-				.isEqualTo(authorizationRequest.getClientId());
+			.isEqualTo(authorizationRequest.getClientId());
 		assertThat(formParameters.getFirst(PkceParameterNames.CODE_VERIFIER))
-				.isEqualTo(authorizationRequest.getAttribute(PkceParameterNames.CODE_VERIFIER));
+			.isEqualTo(authorizationRequest.getAttribute(PkceParameterNames.CODE_VERIFIER));
 	}
 
 }

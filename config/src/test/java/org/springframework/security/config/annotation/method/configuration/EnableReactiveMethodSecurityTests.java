@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2021 the original author or authors.
+ * Copyright 2002-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -57,10 +57,10 @@ public class EnableReactiveMethodSecurityTests {
 	TestPublisher<String> result = TestPublisher.create();
 
 	Context withAdmin = ReactiveSecurityContextHolder
-			.withAuthentication(new TestingAuthenticationToken("admin", "password", "ROLE_USER", "ROLE_ADMIN"));
+		.withAuthentication(new TestingAuthenticationToken("admin", "password", "ROLE_USER", "ROLE_ADMIN"));
 
 	Context withUser = ReactiveSecurityContextHolder
-			.withAuthentication(new TestingAuthenticationToken("user", "password", "ROLE_USER"));
+		.withAuthentication(new TestingAuthenticationToken("user", "password", "ROLE_USER"));
 
 	@AfterEach
 	public void cleanup() {
@@ -75,11 +75,10 @@ public class EnableReactiveMethodSecurityTests {
 	@Test
 	public void notPublisherPreAuthorizeFindByIdThenThrowsIllegalStateException() {
 		assertThatIllegalStateException().isThrownBy(() -> this.messageService.notPublisherPreAuthorizeFindById(1L))
-				.withMessage("The returnType class java.lang.String on public abstract java.lang.String "
-						+ "org.springframework.security.config.annotation.method.configuration.ReactiveMessageService"
-						+ ".notPublisherPreAuthorizeFindById(long) must return an instance of org.reactivestreams"
-						+ ".Publisher (i.e. Mono / Flux) or the function must be a Kotlin coroutine "
-						+ "function in order to support Reactor Context");
+			.withMessage("The returnType class java.lang.String on public abstract java.lang.String "
+					+ "org.springframework.security.config.annotation.method.configuration.ReactiveMessageService"
+					+ ".notPublisherPreAuthorizeFindById(long) must return an instance of org.reactivestreams"
+					+ ".Publisher (for example, a Mono or Flux) or the function must be a Kotlin coroutine in order to support Reactor Context");
 	}
 
 	@Test
@@ -303,7 +302,7 @@ public class EnableReactiveMethodSecurityTests {
 	public void publisherPreAuthorizeHasRoleWhenGrantedThenSuccess() {
 		given(this.delegate.publisherPreAuthorizeHasRoleFindById(1L)).willReturn(publisherJust("result"));
 		Publisher<String> findById = Flux.from(this.messageService.publisherPreAuthorizeHasRoleFindById(1L))
-				.contextWrite(this.withAdmin);
+			.contextWrite(this.withAdmin);
 		StepVerifier.create(findById).consumeNextWith((s) -> assertThat(s).isEqualTo("result")).verifyComplete();
 	}
 
@@ -319,7 +318,7 @@ public class EnableReactiveMethodSecurityTests {
 	public void publisherPreAuthorizeHasRoleWhenNotAuthorizedThenDenied() {
 		given(this.delegate.publisherPreAuthorizeHasRoleFindById(1L)).willReturn(this.result);
 		Publisher<String> findById = Flux.from(this.messageService.publisherPreAuthorizeHasRoleFindById(1L))
-				.contextWrite(this.withUser);
+			.contextWrite(this.withUser);
 		StepVerifier.create(findById).expectError(AccessDeniedException.class).verify();
 		this.result.assertNoSubscribers();
 	}
@@ -328,7 +327,7 @@ public class EnableReactiveMethodSecurityTests {
 	public void publisherPreAuthorizeBeanWhenGrantedThenSuccess() {
 		given(this.delegate.publisherPreAuthorizeBeanFindById(2L)).willReturn(publisherJust("result"));
 		Publisher<String> findById = Flux.from(this.messageService.publisherPreAuthorizeBeanFindById(2L))
-				.contextWrite(this.withAdmin);
+			.contextWrite(this.withAdmin);
 		StepVerifier.create(findById).expectNext("result").verifyComplete();
 	}
 
@@ -351,7 +350,7 @@ public class EnableReactiveMethodSecurityTests {
 	public void publisherPreAuthorizeBeanWhenNotAuthorizedThenDenied() {
 		given(this.delegate.publisherPreAuthorizeBeanFindById(1L)).willReturn(this.result);
 		Publisher<String> findById = Flux.from(this.messageService.publisherPreAuthorizeBeanFindById(1L))
-				.contextWrite(this.withUser);
+			.contextWrite(this.withUser);
 		StepVerifier.create(findById).expectError(AccessDeniedException.class).verify();
 		this.result.assertNoSubscribers();
 	}
@@ -360,7 +359,7 @@ public class EnableReactiveMethodSecurityTests {
 	public void publisherPostAuthorizeWhenAuthorizedThenSuccess() {
 		given(this.delegate.publisherPostAuthorizeFindById(1L)).willReturn(publisherJust("user"));
 		Publisher<String> findById = Flux.from(this.messageService.publisherPostAuthorizeFindById(1L))
-				.contextWrite(this.withUser);
+			.contextWrite(this.withUser);
 		StepVerifier.create(findById).expectNext("user").verifyComplete();
 	}
 
@@ -368,7 +367,7 @@ public class EnableReactiveMethodSecurityTests {
 	public void publisherPostAuthorizeWhenNotAuthorizedThenDenied() {
 		given(this.delegate.publisherPostAuthorizeBeanFindById(1L)).willReturn(publisherJust("not-authorized"));
 		Publisher<String> findById = Flux.from(this.messageService.publisherPostAuthorizeBeanFindById(1L))
-				.contextWrite(this.withUser);
+			.contextWrite(this.withUser);
 		StepVerifier.create(findById).expectError(AccessDeniedException.class).verify();
 	}
 
@@ -376,7 +375,7 @@ public class EnableReactiveMethodSecurityTests {
 	public void publisherPostAuthorizeWhenBeanAndAuthorizedThenSuccess() {
 		given(this.delegate.publisherPostAuthorizeBeanFindById(2L)).willReturn(publisherJust("user"));
 		Publisher<String> findById = Flux.from(this.messageService.publisherPostAuthorizeBeanFindById(2L))
-				.contextWrite(this.withUser);
+			.contextWrite(this.withUser);
 		StepVerifier.create(findById).expectNext("user").verifyComplete();
 	}
 
@@ -391,7 +390,7 @@ public class EnableReactiveMethodSecurityTests {
 	public void publisherPostAuthorizeWhenBeanAndNotAuthorizedThenDenied() {
 		given(this.delegate.publisherPostAuthorizeBeanFindById(1L)).willReturn(publisherJust("not-authorized"));
 		Publisher<String> findById = Flux.from(this.messageService.publisherPostAuthorizeBeanFindById(1L))
-				.contextWrite(this.withUser);
+			.contextWrite(this.withUser);
 		StepVerifier.create(findById).expectError(AccessDeniedException.class).verify();
 	}
 

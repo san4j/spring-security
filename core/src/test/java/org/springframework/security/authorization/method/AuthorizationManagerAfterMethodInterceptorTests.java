@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,18 +26,23 @@ import org.springframework.security.authentication.TestAuthentication;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.authorization.AuthenticatedAuthorizationManager;
 import org.springframework.security.authorization.AuthorizationDecision;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.security.authorization.AuthorizationEventPublisher;
 import org.springframework.security.authorization.AuthorizationManager;
+import org.springframework.security.authorization.AuthorizationResult;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.AuthorityUtils;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.context.SecurityContextHolderStrategy;
 import org.springframework.security.core.context.SecurityContextImpl;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
@@ -45,6 +50,7 @@ import static org.mockito.Mockito.verify;
  * Tests for {@link AuthorizationManagerAfterMethodInterceptor}.
  *
  * @author Evgeniy Cheban
+ * @author Gengwu Zhao
  */
 public class AuthorizationManagerAfterMethodInterceptorTests {
 
@@ -52,15 +58,15 @@ public class AuthorizationManagerAfterMethodInterceptorTests {
 	public void instantiateWhenMethodMatcherNullThenException() {
 		AuthorizationManager<MethodInvocationResult> mockAuthorizationManager = mock(AuthorizationManager.class);
 		assertThatIllegalArgumentException()
-				.isThrownBy(() -> new AuthorizationManagerAfterMethodInterceptor(null, mockAuthorizationManager))
-				.withMessage("pointcut cannot be null");
+			.isThrownBy(() -> new AuthorizationManagerAfterMethodInterceptor(null, mockAuthorizationManager))
+			.withMessage("pointcut cannot be null");
 	}
 
 	@Test
 	public void instantiateWhenAuthorizationManagerNullThenException() {
 		assertThatIllegalArgumentException()
-				.isThrownBy(() -> new AuthorizationManagerAfterMethodInterceptor(mock(Pointcut.class), null))
-				.withMessage("authorizationManager cannot be null");
+			.isThrownBy(() -> new AuthorizationManagerAfterMethodInterceptor(mock(Pointcut.class), null))
+			.withMessage("authorizationManager cannot be null");
 	}
 
 	@Test
@@ -69,6 +75,7 @@ public class AuthorizationManagerAfterMethodInterceptorTests {
 		MethodInvocationResult result = new MethodInvocationResult(mockMethodInvocation, new Object());
 		given(mockMethodInvocation.proceed()).willReturn(result.getResult());
 		AuthorizationManager<MethodInvocationResult> mockAuthorizationManager = mock(AuthorizationManager.class);
+		given(mockAuthorizationManager.authorize(any(), any())).willCallRealMethod();
 		AuthorizationManagerAfterMethodInterceptor advice = new AuthorizationManagerAfterMethodInterceptor(
 				Pointcut.TRUE, mockAuthorizationManager);
 		Object returnedObject = advice.invoke(mockMethodInvocation);
@@ -78,12 +85,12 @@ public class AuthorizationManagerAfterMethodInterceptorTests {
 
 	@Test
 	public void afterWhenMockSecurityContextHolderStrategyThenUses() throws Throwable {
-		SecurityContextHolderStrategy strategy = mock(SecurityContextHolderStrategy.class);
 		Authentication authentication = TestAuthentication.authenticatedUser();
-		given(strategy.getContext()).willReturn(new SecurityContextImpl(authentication));
+		SecurityContextHolderStrategy strategy = mockSecurityContextHolderStrategy(
+				new SecurityContextImpl(authentication));
 		MethodInvocation invocation = mock(MethodInvocation.class);
 		AuthorizationManager<MethodInvocationResult> authorizationManager = AuthenticatedAuthorizationManager
-				.authenticated();
+			.authenticated();
 		AuthorizationManagerAfterMethodInterceptor advice = new AuthorizationManagerAfterMethodInterceptor(
 				Pointcut.TRUE, authorizationManager);
 		advice.setSecurityContextHolderStrategy(strategy);
@@ -91,12 +98,31 @@ public class AuthorizationManagerAfterMethodInterceptorTests {
 		verify(strategy).getContext();
 	}
 
+	// gh-12877
+	@Test
+	public void afterWhenStaticSecurityContextHolderStrategyAfterConstructorThenUses() throws Throwable {
+		Authentication authentication = new TestingAuthenticationToken("john", "password",
+				AuthorityUtils.createAuthorityList("authority"));
+		SecurityContextHolderStrategy strategy = mockSecurityContextHolderStrategy(
+				new SecurityContextImpl(authentication));
+		MethodInvocation invocation = mock(MethodInvocation.class);
+		AuthorizationManager<MethodInvocationResult> authorizationManager = AuthenticatedAuthorizationManager
+			.authenticated();
+		AuthorizationManagerAfterMethodInterceptor advice = new AuthorizationManagerAfterMethodInterceptor(
+				Pointcut.TRUE, authorizationManager);
+		SecurityContextHolderStrategy saved = SecurityContextHolder.getContextHolderStrategy();
+		SecurityContextHolder.setContextHolderStrategy(strategy);
+		advice.invoke(invocation);
+		verify(strategy).getContext();
+		SecurityContextHolder.setContextHolderStrategy(saved);
+	}
+
 	@Test
 	public void configureWhenAuthorizationEventPublisherIsNullThenIllegalArgument() {
 		AuthorizationManagerAfterMethodInterceptor advice = new AuthorizationManagerAfterMethodInterceptor(
 				Pointcut.TRUE, AuthenticatedAuthorizationManager.authenticated());
 		assertThatIllegalArgumentException().isThrownBy(() -> advice.setAuthorizationEventPublisher(null))
-				.withMessage("eventPublisher cannot be null");
+			.withMessage("eventPublisher cannot be null");
 	}
 
 	@Test
@@ -104,6 +130,8 @@ public class AuthorizationManagerAfterMethodInterceptorTests {
 		AuthorizationManagerAfterMethodInterceptor advice = new AuthorizationManagerAfterMethodInterceptor(
 				Pointcut.TRUE, AuthenticatedAuthorizationManager.authenticated());
 		AuthorizationEventPublisher eventPublisher = mock(AuthorizationEventPublisher.class);
+		doCallRealMethod().when(eventPublisher)
+			.publishAuthorizationEvent(any(Supplier.class), any(), any(AuthorizationResult.class));
 		advice.setAuthorizationEventPublisher(eventPublisher);
 
 		SecurityContext securityContext = new SecurityContextImpl();
@@ -117,6 +145,33 @@ public class AuthorizationManagerAfterMethodInterceptorTests {
 		advice.invoke(mockMethodInvocation);
 		verify(eventPublisher).publishAuthorizationEvent(any(Supplier.class), any(MethodInvocationResult.class),
 				any(AuthorizationDecision.class));
+	}
+
+	@Test
+	public void invokeWhenCustomAuthorizationDeniedExceptionThenThrows() throws Throwable {
+		MethodInvocation mi = mock(MethodInvocation.class);
+		given(mi.proceed()).willReturn("ok");
+		AuthorizationManager<MethodInvocationResult> manager = mock(AuthorizationManager.class);
+		given(manager.check(any(), any()))
+			.willThrow(new MyAuthzDeniedException("denied", new AuthorizationDecision(false)));
+		given(manager.authorize(any(), any())).willCallRealMethod();
+		AuthorizationManagerAfterMethodInterceptor advice = new AuthorizationManagerAfterMethodInterceptor(
+				Pointcut.TRUE, manager);
+		assertThatExceptionOfType(MyAuthzDeniedException.class).isThrownBy(() -> advice.invoke(mi));
+	}
+
+	private SecurityContextHolderStrategy mockSecurityContextHolderStrategy(SecurityContextImpl securityContextImpl) {
+		SecurityContextHolderStrategy strategy = mock(SecurityContextHolderStrategy.class);
+		given(strategy.getContext()).willReturn(securityContextImpl);
+		return strategy;
+	}
+
+	static class MyAuthzDeniedException extends AuthorizationDeniedException {
+
+		MyAuthzDeniedException(String msg, AuthorizationResult authorizationResult) {
+			super(msg, authorizationResult);
+		}
+
 	}
 
 }

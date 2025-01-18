@@ -41,6 +41,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.cache.NullUserCache;
 import org.springframework.security.test.web.CodecTestUtils;
+import org.springframework.security.web.context.RequestAttributeSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.util.StringUtils;
 
@@ -148,7 +149,7 @@ public class DigestAuthenticationFilterTests {
 		String header = response.getHeader("WWW-Authenticate").toString().substring(7);
 		String[] headerEntries = StringUtils.commaDelimitedListToStringArray(header);
 		Map<String, String> headerMap = DigestAuthUtils.splitEachArrayElementAndCreateMap(headerEntries, "=", "\"");
-		assertThat(headerMap.get("stale")).isEqualTo("true");
+		assertThat(headerMap).containsEntry("stale", "true");
 	}
 
 	@Test
@@ -257,7 +258,9 @@ public class DigestAuthenticationFilterTests {
 		executeFilterInContainerSimulator(this.filter, this.request, true);
 		assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
 		assertThat(((UserDetails) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getUsername())
-				.isEqualTo(USERNAME);
+			.isEqualTo(USERNAME);
+		assertThat(this.request.getAttribute(RequestAttributeSecurityContextRepository.DEFAULT_REQUEST_ATTR_NAME))
+			.isNotNull();
 	}
 
 	@Test
@@ -269,8 +272,10 @@ public class DigestAuthenticationFilterTests {
 		executeFilterInContainerSimulator(this.filter, this.request, true);
 		assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
 		assertThat(((UserDetails) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getUsername())
-				.isEqualTo(USERNAME);
+			.isEqualTo(USERNAME);
 		assertThat(SecurityContextHolder.getContext().getAuthentication().isAuthenticated()).isFalse();
+		assertThat(this.request.getAttribute(RequestAttributeSecurityContextRepository.DEFAULT_REQUEST_ATTR_NAME))
+			.isNotNull();
 	}
 
 	@Test
@@ -283,10 +288,12 @@ public class DigestAuthenticationFilterTests {
 		executeFilterInContainerSimulator(this.filter, this.request, true);
 		assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
 		assertThat(((UserDetails) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getUsername())
-				.isEqualTo(USERNAME);
+			.isEqualTo(USERNAME);
 		assertThat(SecurityContextHolder.getContext().getAuthentication().isAuthenticated()).isTrue();
 		assertThat(SecurityContextHolder.getContext().getAuthentication().getAuthorities())
-				.isEqualTo(AuthorityUtils.createAuthorityList("ROLE_ONE", "ROLE_TWO"));
+			.isEqualTo(AuthorityUtils.createAuthorityList("ROLE_ONE", "ROLE_TWO"));
+		assertThat(this.request.getAttribute(RequestAttributeSecurityContextRepository.DEFAULT_REQUEST_ATTR_NAME))
+			.isNotNull();
 	}
 
 	@Test
@@ -419,10 +426,10 @@ public class DigestAuthenticationFilterTests {
 		MockHttpServletResponse response = executeFilterInContainerSimulator(this.filter, this.request, true);
 		assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
 		assertThat(((UserDetails) SecurityContextHolder.getContext().getAuthentication().getPrincipal()).getUsername())
-				.isEqualTo(USERNAME);
+			.isEqualTo(USERNAME);
 		assertThat(SecurityContextHolder.getContext().getAuthentication().isAuthenticated()).isTrue();
 		assertThat(SecurityContextHolder.getContext().getAuthentication().getAuthorities())
-				.isEqualTo(AuthorityUtils.createAuthorityList("ROLE_ONE", "ROLE_TWO"));
+			.isEqualTo(AuthorityUtils.createAuthorityList("ROLE_ONE", "ROLE_TWO"));
 		verify(securityContextRepository).saveContext(contextArg.capture(), eq(this.request), eq(response));
 		assertThat(contextArg.getValue().getAuthentication().getName()).isEqualTo(USERNAME);
 	}

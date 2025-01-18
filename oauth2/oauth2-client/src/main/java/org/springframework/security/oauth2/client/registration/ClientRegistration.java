@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,9 +24,15 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
+import org.springframework.core.log.LogMessage;
 import org.springframework.security.core.SpringSecurityCoreVersion;
 import org.springframework.security.oauth2.core.AuthenticationMethod;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
@@ -39,6 +45,7 @@ import org.springframework.util.StringUtils;
  * Provider.
  *
  * @author Joe Grandja
+ * @author Michael Sosa
  * @since 5.0
  * @see <a target="_blank" href="https://tools.ietf.org/html/rfc6749#section-2">Section 2
  * Client Registration</a>
@@ -64,6 +71,8 @@ public final class ClientRegistration implements Serializable {
 	private ProviderDetails providerDetails = new ProviderDetails();
 
 	private String clientName;
+
+	private ClientSettings clientSettings;
 
 	private ClientRegistration() {
 	}
@@ -156,6 +165,14 @@ public final class ClientRegistration implements Serializable {
 		return this.clientName;
 	}
 
+	/**
+	 * Returns the {@link ClientSettings client configuration settings}.
+	 * @return the {@link ClientSettings}
+	 */
+	public ClientSettings getClientSettings() {
+		return this.clientSettings;
+	}
+
 	@Override
 	public String toString() {
 		// @formatter:off
@@ -169,6 +186,7 @@ public final class ClientRegistration implements Serializable {
 				+ '\'' + ", scopes=" + this.scopes
 				+ ", providerDetails=" + this.providerDetails
 				+ ", clientName='" + this.clientName + '\''
+				+ ", clientSettings='" + this.clientSettings + '\''
 				+ '}';
 		// @formatter:on
 	}
@@ -323,6 +341,12 @@ public final class ClientRegistration implements Serializable {
 
 		private static final long serialVersionUID = SpringSecurityCoreVersion.SERIAL_VERSION_UID;
 
+		private static final Log logger = LogFactory.getLog(Builder.class);
+
+		private static final List<AuthorizationGrantType> AUTHORIZATION_GRANT_TYPES = Arrays.asList(
+				AuthorizationGrantType.AUTHORIZATION_CODE, AuthorizationGrantType.CLIENT_CREDENTIALS,
+				AuthorizationGrantType.REFRESH_TOKEN, AuthorizationGrantType.PASSWORD);
+
 		private String registrationId;
 
 		private String clientId;
@@ -355,6 +379,8 @@ public final class ClientRegistration implements Serializable {
 
 		private String clientName;
 
+		private ClientSettings clientSettings = ClientSettings.builder().build();
+
 		private Builder(String registrationId) {
 			this.registrationId = registrationId;
 		}
@@ -379,6 +405,7 @@ public final class ClientRegistration implements Serializable {
 				this.configurationMetadata = new HashMap<>(configurationMetadata);
 			}
 			this.clientName = clientRegistration.clientName;
+			this.clientSettings = clientRegistration.clientSettings;
 		}
 
 		/**
@@ -583,6 +610,17 @@ public final class ClientRegistration implements Serializable {
 		}
 
 		/**
+		 * Sets the {@link ClientSettings client configuration settings}.
+		 * @param clientSettings the client configuration settings
+		 * @return the {@link Builder}
+		 */
+		public Builder clientSettings(ClientSettings clientSettings) {
+			Assert.notNull(clientSettings, "clientSettings cannot be null");
+			this.clientSettings = clientSettings;
+			return this;
+		}
+
+		/**
 		 * Builds a new {@link ClientRegistration}.
 		 * @return a {@link ClientRegistration}
 		 */
@@ -597,6 +635,7 @@ public final class ClientRegistration implements Serializable {
 			else if (AuthorizationGrantType.AUTHORIZATION_CODE.equals(this.authorizationGrantType)) {
 				this.validateAuthorizationCodeGrantType();
 			}
+			this.validateAuthorizationGrantTypes();
 			this.validateScopes();
 			return this.create();
 		}
@@ -614,12 +653,13 @@ public final class ClientRegistration implements Serializable {
 			clientRegistration.providerDetails = createProviderDetails(clientRegistration);
 			clientRegistration.clientName = StringUtils.hasText(this.clientName) ? this.clientName
 					: this.registrationId;
+			clientRegistration.clientSettings = this.clientSettings;
 			return clientRegistration;
 		}
 
 		private ClientAuthenticationMethod deduceClientAuthenticationMethod(ClientRegistration clientRegistration) {
 			if (AuthorizationGrantType.AUTHORIZATION_CODE.equals(this.authorizationGrantType)
-					&& !StringUtils.hasText(this.clientSecret)) {
+					&& (!StringUtils.hasText(this.clientSecret))) {
 				return ClientAuthenticationMethod.NONE;
 			}
 			return ClientAuthenticationMethod.CLIENT_SECRET_BASIC;
@@ -664,6 +704,23 @@ public final class ClientRegistration implements Serializable {
 			Assert.hasText(this.tokenUri, "tokenUri cannot be empty");
 		}
 
+		private void validateAuthorizationGrantTypes() {
+			for (AuthorizationGrantType authorizationGrantType : AUTHORIZATION_GRANT_TYPES) {
+				if (authorizationGrantType.getValue().equalsIgnoreCase(this.authorizationGrantType.getValue())
+						&& !authorizationGrantType.equals(this.authorizationGrantType)) {
+					logger.warn(LogMessage.format(
+							"AuthorizationGrantType: %s does not match the pre-defined constant %s and won't match a valid OAuth2AuthorizedClientProvider",
+							this.authorizationGrantType, authorizationGrantType));
+				}
+				if (!AuthorizationGrantType.AUTHORIZATION_CODE.equals(this.authorizationGrantType)
+						&& this.clientSettings.isRequireProofKey()) {
+					throw new IllegalStateException(
+							"clientSettings.isRequireProofKey=true is only valid with authorizationGrantType=AUTHORIZATION_CODE. Got authorizationGrantType="
+									+ this.authorizationGrantType);
+				}
+			}
+		}
+
 		private void validateScopes() {
 			if (this.scopes == null) {
 				return;
@@ -674,12 +731,85 @@ public final class ClientRegistration implements Serializable {
 		}
 
 		private static boolean validateScope(String scope) {
-			return scope == null || scope.chars().allMatch((c) -> withinTheRangeOf(c, 0x21, 0x21)
-					|| withinTheRangeOf(c, 0x23, 0x5B) || withinTheRangeOf(c, 0x5D, 0x7E));
+			return scope == null || scope.chars()
+				.allMatch((c) -> withinTheRangeOf(c, 0x21, 0x21) || withinTheRangeOf(c, 0x23, 0x5B)
+						|| withinTheRangeOf(c, 0x5D, 0x7E));
 		}
 
 		private static boolean withinTheRangeOf(int c, int min, int max) {
 			return c >= min && c <= max;
+		}
+
+	}
+
+	/**
+	 * A facility for client configuration settings.
+	 *
+	 * @author DingHao
+	 * @since 6.5
+	 */
+	public static final class ClientSettings {
+
+		private boolean requireProofKey;
+
+		private ClientSettings() {
+
+		}
+
+		public boolean isRequireProofKey() {
+			return this.requireProofKey;
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (this == o) {
+				return true;
+			}
+			if (!(o instanceof ClientSettings that)) {
+				return false;
+			}
+			return this.requireProofKey == that.requireProofKey;
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hashCode(this.requireProofKey);
+		}
+
+		@Override
+		public String toString() {
+			return "ClientSettings{" + "requireProofKey=" + this.requireProofKey + '}';
+		}
+
+		public static Builder builder() {
+			return new Builder();
+		}
+
+		public static final class Builder {
+
+			private boolean requireProofKey;
+
+			private Builder() {
+			}
+
+			/**
+			 * Set to {@code true} if the client is required to provide a proof key
+			 * challenge and verifier when performing the Authorization Code Grant flow.
+			 * @param requireProofKey {@code true} if the client is required to provide a
+			 * proof key challenge and verifier, {@code false} otherwise
+			 * @return the {@link Builder} for further configuration
+			 */
+			public Builder requireProofKey(boolean requireProofKey) {
+				this.requireProofKey = requireProofKey;
+				return this;
+			}
+
+			public ClientSettings build() {
+				ClientSettings clientSettings = new ClientSettings();
+				clientSettings.requireProofKey = this.requireProofKey;
+				return clientSettings;
+			}
+
 		}
 
 	}

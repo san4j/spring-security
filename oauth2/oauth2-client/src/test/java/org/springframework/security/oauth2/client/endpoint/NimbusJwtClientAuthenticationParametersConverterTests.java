@@ -73,20 +73,20 @@ public class NimbusJwtClientAuthenticationParametersConverterTests {
 	@Test
 	public void constructorWhenJwkResolverNullThenThrowIllegalArgumentException() {
 		assertThatIllegalArgumentException()
-				.isThrownBy(() -> new NimbusJwtClientAuthenticationParametersConverter<>(null))
-				.withMessage("jwkResolver cannot be null");
+			.isThrownBy(() -> new NimbusJwtClientAuthenticationParametersConverter<>(null))
+			.withMessage("jwkResolver cannot be null");
 	}
 
 	@Test
 	public void convertWhenAuthorizationGrantRequestNullThenThrowIllegalArgumentException() {
 		assertThatIllegalArgumentException().isThrownBy(() -> this.converter.convert(null))
-				.withMessage("authorizationGrantRequest cannot be null");
+			.withMessage("authorizationGrantRequest cannot be null");
 	}
 
 	@Test
 	public void setJwtClientAssertionCustomizerWhenNullThenThrowIllegalArgumentException() {
 		assertThatIllegalArgumentException().isThrownBy(() -> this.converter.setJwtClientAssertionCustomizer(null))
-				.withMessage("jwtClientAssertionCustomizer cannot be null");
+			.withMessage("jwtClientAssertionCustomizer cannot be null");
 	}
 
 	@Test
@@ -112,9 +112,9 @@ public class NimbusJwtClientAuthenticationParametersConverterTests {
 		OAuth2ClientCredentialsGrantRequest clientCredentialsGrantRequest = new OAuth2ClientCredentialsGrantRequest(
 				clientRegistration);
 		assertThatExceptionOfType(OAuth2AuthorizationException.class)
-				.isThrownBy(() -> this.converter.convert(clientCredentialsGrantRequest))
-				.withMessage("[invalid_key] Failed to resolve JWK signing key for client registration '"
-						+ clientRegistration.getRegistrationId() + "'.");
+			.isThrownBy(() -> this.converter.convert(clientCredentialsGrantRequest))
+			.withMessage("[invalid_key] Failed to resolve JWK signing key for client registration '"
+					+ clientRegistration.getRegistrationId() + "'.");
 	}
 
 	@Test
@@ -133,19 +133,19 @@ public class NimbusJwtClientAuthenticationParametersConverterTests {
 		MultiValueMap<String, String> parameters = this.converter.convert(clientCredentialsGrantRequest);
 
 		assertThat(parameters.getFirst(OAuth2ParameterNames.CLIENT_ASSERTION_TYPE))
-				.isEqualTo("urn:ietf:params:oauth:client-assertion-type:jwt-bearer");
+			.isEqualTo("urn:ietf:params:oauth:client-assertion-type:jwt-bearer");
 		String encodedJws = parameters.getFirst(OAuth2ParameterNames.CLIENT_ASSERTION);
 		assertThat(encodedJws).isNotNull();
 
 		NimbusJwtDecoder jwtDecoder = NimbusJwtDecoder.withPublicKey(rsaJwk.toRSAPublicKey()).build();
 		Jwt jws = jwtDecoder.decode(encodedJws);
 
-		assertThat(jws.getHeaders().get(JoseHeaderNames.ALG)).isEqualTo(SignatureAlgorithm.RS256.getName());
-		assertThat(jws.getHeaders().get(JoseHeaderNames.KID)).isEqualTo(rsaJwk.getKeyID());
+		assertThat(jws.getHeaders()).containsEntry(JoseHeaderNames.ALG, SignatureAlgorithm.RS256.getName());
+		assertThat(jws.getHeaders()).containsEntry(JoseHeaderNames.KID, rsaJwk.getKeyID());
 		assertThat(jws.<String>getClaim(JwtClaimNames.ISS)).isEqualTo(clientRegistration.getClientId());
 		assertThat(jws.getSubject()).isEqualTo(clientRegistration.getClientId());
 		assertThat(jws.getAudience())
-				.isEqualTo(Collections.singletonList(clientRegistration.getProviderDetails().getTokenUri()));
+			.isEqualTo(Collections.singletonList(clientRegistration.getProviderDetails().getTokenUri()));
 		assertThat(jws.getId()).isNotNull();
 		assertThat(jws.getIssuedAt()).isNotNull();
 		assertThat(jws.getExpiresAt()).isNotNull();
@@ -167,19 +167,19 @@ public class NimbusJwtClientAuthenticationParametersConverterTests {
 		MultiValueMap<String, String> parameters = this.converter.convert(clientCredentialsGrantRequest);
 
 		assertThat(parameters.getFirst(OAuth2ParameterNames.CLIENT_ASSERTION_TYPE))
-				.isEqualTo("urn:ietf:params:oauth:client-assertion-type:jwt-bearer");
+			.isEqualTo("urn:ietf:params:oauth:client-assertion-type:jwt-bearer");
 		String encodedJws = parameters.getFirst(OAuth2ParameterNames.CLIENT_ASSERTION);
 		assertThat(encodedJws).isNotNull();
 
 		NimbusJwtDecoder jwtDecoder = NimbusJwtDecoder.withSecretKey(secretJwk.toSecretKey()).build();
 		Jwt jws = jwtDecoder.decode(encodedJws);
 
-		assertThat(jws.getHeaders().get(JoseHeaderNames.ALG)).isEqualTo(MacAlgorithm.HS256.getName());
-		assertThat(jws.getHeaders().get(JoseHeaderNames.KID)).isEqualTo(secretJwk.getKeyID());
+		assertThat(jws.getHeaders()).containsEntry(JoseHeaderNames.ALG, MacAlgorithm.HS256.getName());
+		assertThat(jws.getHeaders()).containsEntry(JoseHeaderNames.KID, secretJwk.getKeyID());
 		assertThat(jws.<String>getClaim(JwtClaimNames.ISS)).isEqualTo(clientRegistration.getClientId());
 		assertThat(jws.getSubject()).isEqualTo(clientRegistration.getClientId());
 		assertThat(jws.getAudience())
-				.isEqualTo(Collections.singletonList(clientRegistration.getProviderDetails().getTokenUri()));
+			.isEqualTo(Collections.singletonList(clientRegistration.getProviderDetails().getTokenUri()));
 		assertThat(jws.getId()).isNotNull();
 		assertThat(jws.getIssuedAt()).isNotNull();
 		assertThat(jws.getExpiresAt()).isNotNull();
@@ -210,20 +210,20 @@ public class NimbusJwtClientAuthenticationParametersConverterTests {
 		MultiValueMap<String, String> parameters = this.converter.convert(clientCredentialsGrantRequest);
 
 		assertThat(parameters.getFirst(OAuth2ParameterNames.CLIENT_ASSERTION_TYPE))
-				.isEqualTo("urn:ietf:params:oauth:client-assertion-type:jwt-bearer");
+			.isEqualTo("urn:ietf:params:oauth:client-assertion-type:jwt-bearer");
 		String encodedJws = parameters.getFirst(OAuth2ParameterNames.CLIENT_ASSERTION);
 		assertThat(encodedJws).isNotNull();
 
 		NimbusJwtDecoder jwtDecoder = NimbusJwtDecoder.withSecretKey(secretJwk.toSecretKey()).build();
 		Jwt jws = jwtDecoder.decode(encodedJws);
 
-		assertThat(jws.getHeaders().get(JoseHeaderNames.ALG)).isEqualTo(MacAlgorithm.HS256.getName());
-		assertThat(jws.getHeaders().get(JoseHeaderNames.KID)).isEqualTo(secretJwk.getKeyID());
-		assertThat(jws.getHeaders().get(headerName)).isEqualTo(headerValue);
+		assertThat(jws.getHeaders()).containsEntry(JoseHeaderNames.ALG, MacAlgorithm.HS256.getName());
+		assertThat(jws.getHeaders()).containsEntry(JoseHeaderNames.KID, secretJwk.getKeyID());
+		assertThat(jws.getHeaders()).containsEntry(headerName, headerValue);
 		assertThat(jws.<String>getClaim(JwtClaimNames.ISS)).isEqualTo(clientRegistration.getClientId());
 		assertThat(jws.getSubject()).isEqualTo(clientRegistration.getClientId());
 		assertThat(jws.getAudience())
-				.isEqualTo(Collections.singletonList(clientRegistration.getProviderDetails().getTokenUri()));
+			.isEqualTo(Collections.singletonList(clientRegistration.getProviderDetails().getTokenUri()));
 		assertThat(jws.getId()).isNotNull();
 		assertThat(jws.getIssuedAt()).isNotNull();
 		assertThat(jws.getExpiresAt()).isNotNull();

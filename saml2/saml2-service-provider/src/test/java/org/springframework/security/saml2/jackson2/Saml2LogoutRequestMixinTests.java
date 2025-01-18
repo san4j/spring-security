@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,8 @@ package org.springframework.security.saml2.jackson2;
 import java.util.HashMap;
 import java.util.Map;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -52,13 +54,26 @@ class Saml2LogoutRequestMixinTests {
 
 	@Test
 	void shouldDeserialize() throws Exception {
+		deserializeAndAssertRequest();
+	}
+
+	// gh-12539
+	@Test
+	void shouldDeserializeWhenFailOnMissingCreatorPropertiesEnabled() throws Exception {
+		// Jackson will use reflection to initialize the binding property if this is not
+		// enabled
+		this.mapper.configure(DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES, true);
+		deserializeAndAssertRequest();
+	}
+
+	private void deserializeAndAssertRequest() throws JsonProcessingException {
 		Saml2LogoutRequest logoutRequest = this.mapper.readValue(TestSaml2JsonPayloads.DEFAULT_LOGOUT_REQUEST_JSON,
 				Saml2LogoutRequest.class);
 
 		assertThat(logoutRequest).isNotNull();
 		assertThat(logoutRequest.getId()).isEqualTo(TestSaml2JsonPayloads.ID);
 		assertThat(logoutRequest.getRelyingPartyRegistrationId())
-				.isEqualTo(TestSaml2JsonPayloads.RELYINGPARTY_REGISTRATION_ID);
+			.isEqualTo(TestSaml2JsonPayloads.RELYINGPARTY_REGISTRATION_ID);
 		assertThat(logoutRequest.getSamlRequest()).isEqualTo(TestSaml2JsonPayloads.SAML_REQUEST);
 		assertThat(logoutRequest.getRelayState()).isEqualTo(TestSaml2JsonPayloads.RELAY_STATE);
 		assertThat(logoutRequest.getLocation()).isEqualTo(TestSaml2JsonPayloads.LOCATION);

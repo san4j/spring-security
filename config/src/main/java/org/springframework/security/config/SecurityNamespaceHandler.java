@@ -1,5 +1,5 @@
 /*
- * Copyright 2009-2022 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -85,23 +85,26 @@ public final class SecurityNamespaceHandler implements NamespaceHandler {
 		String version = pkg.getImplementationVersion();
 		this.logger.info("Spring Security 'config' module version is " + version);
 		if (version.compareTo(coreVersion) != 0) {
-			this.logger.error(
-					"You are running with different versions of the Spring Security 'core' and 'config' modules");
+			this.logger
+				.error("You are running with different versions of the Spring Security 'core' and 'config' modules");
 		}
 	}
 
 	@Override
 	public BeanDefinition parse(Element element, ParserContext pc) {
 		if (!namespaceMatchesVersion(element)) {
-			pc.getReaderContext().fatal("You cannot use a spring-security-2.0.xsd or spring-security-3.0.xsd or "
-					+ "spring-security-3.1.xsd schema or spring-security-3.2.xsd schema or spring-security-4.0.xsd schema "
-					+ "with Spring Security 6.0. Please update your schema declarations to the 6.0 schema.", element);
+			pc.getReaderContext()
+				.fatal("You cannot use a spring-security-2.0.xsd or spring-security-3.0.xsd or "
+						+ "spring-security-3.1.xsd schema or spring-security-3.2.xsd schema or spring-security-4.0.xsd schema "
+						+ "with Spring Security 6.5. Please update your schema declarations to the 6.5 schema.",
+						element);
 		}
 		String name = pc.getDelegate().getLocalName(element);
 		BeanDefinitionParser parser = this.parsers.get(name);
 		if (parser == null) {
 			// SEC-1455. Load parsers when required, not just on init().
 			loadParsers();
+			parser = this.parsers.get(name);
 		}
 		if (parser != null) {
 			return parser.parse(element, pc);
@@ -139,8 +142,9 @@ public final class SecurityNamespaceHandler implements NamespaceHandler {
 	}
 
 	private void reportUnsupportedNodeType(String name, ParserContext pc, Node node) {
-		pc.getReaderContext().fatal("Security namespace does not support decoration of "
-				+ ((node instanceof Element) ? "element" : "attribute") + " [" + name + "]", node);
+		pc.getReaderContext()
+			.fatal("Security namespace does not support decoration of "
+					+ ((node instanceof Element) ? "element" : "attribute") + " [" + name + "]", node);
 	}
 
 	private void reportMissingWebClasses(String nodeName, ParserContext pc, Node node) {
@@ -217,7 +221,7 @@ public final class SecurityNamespaceHandler implements NamespaceHandler {
 
 	private boolean matchesVersionInternal(Element element) {
 		String schemaLocation = element.getAttributeNS("http://www.w3.org/2001/XMLSchema-instance", "schemaLocation");
-		return schemaLocation.matches("(?m).*spring-security-6\\.0.*.xsd.*")
+		return schemaLocation.matches("(?m).*spring-security-6\\.5.*.xsd.*")
 				|| schemaLocation.matches("(?m).*spring-security.xsd.*")
 				|| !schemaLocation.matches("(?m).*spring-security.*");
 	}

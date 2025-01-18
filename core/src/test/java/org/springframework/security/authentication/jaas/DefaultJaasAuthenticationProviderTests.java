@@ -121,7 +121,7 @@ public class DefaultJaasAuthenticationProviderTests {
 	@Test
 	public void authenticateBadUser() {
 		assertThatExceptionOfType(AuthenticationException.class).isThrownBy(() -> this.provider
-				.authenticate(UsernamePasswordAuthenticationToken.unauthenticated("asdf", "password")));
+			.authenticate(UsernamePasswordAuthenticationToken.unauthenticated("asdf", "password")));
 		verifyFailedLogin();
 	}
 
@@ -222,21 +222,18 @@ public class DefaultJaasAuthenticationProviderTests {
 	public void javadocExample() {
 		String resName = "/" + getClass().getName().replace('.', '/') + ".xml";
 		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext(resName);
-		context.registerShutdownHook();
-		try {
+		try (context) {
+			context.registerShutdownHook();
 			this.provider = context.getBean(DefaultJaasAuthenticationProvider.class);
 			Authentication auth = this.provider.authenticate(this.token);
 			assertThat(auth.isAuthenticated()).isEqualTo(true);
 			assertThat(auth.getPrincipal()).isEqualTo(this.token.getPrincipal());
 		}
-		finally {
-			context.close();
-		}
 	}
 
 	private void verifyFailedLogin() {
 		ArgumentCaptor<JaasAuthenticationFailedEvent> event = ArgumentCaptor
-				.forClass(JaasAuthenticationFailedEvent.class);
+			.forClass(JaasAuthenticationFailedEvent.class);
 		verify(this.publisher).publishEvent(event.capture());
 		assertThat(event.getValue()).isInstanceOf(JaasAuthenticationFailedEvent.class);
 		assertThat(event.getValue().getException()).isNotNull();

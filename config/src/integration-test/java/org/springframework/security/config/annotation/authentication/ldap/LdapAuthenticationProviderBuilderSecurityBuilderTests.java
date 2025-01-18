@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2019 the original author or authors.
+ * Copyright 2002-2022 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,10 +33,10 @@ import org.springframework.context.annotation.Import;
 import org.springframework.ldap.core.support.BaseLdapPathContextSource;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.authentication.configuration.EnableGlobalAuthentication;
 import org.springframework.security.config.annotation.configuration.ObjectPostProcessorConfiguration;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
 import org.springframework.security.config.test.SpringTestContext;
 import org.springframework.security.config.test.SpringTestContextExtension;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -70,13 +70,12 @@ public class LdapAuthenticationProviderBuilderSecurityBuilderTests {
 	public void defaultConfiguration() {
 		this.spring.register(DefaultLdapConfig.class).autowire();
 		LdapAuthenticationProvider provider = ldapProvider();
-
 		LdapAuthoritiesPopulator authoritiesPopulator = getAuthoritiesPopulator(provider);
 		assertThat(authoritiesPopulator).hasFieldOrPropertyWithValue("groupRoleAttribute", "cn");
 		assertThat(authoritiesPopulator).hasFieldOrPropertyWithValue("groupSearchBase", "");
 		assertThat(authoritiesPopulator).hasFieldOrPropertyWithValue("groupSearchFilter", "(uniqueMember={0})");
-		assertThat(authoritiesPopulator).extracting("searchControls").hasFieldOrPropertyWithValue("searchScope",
-				SearchControls.ONELEVEL_SCOPE);
+		assertThat(authoritiesPopulator).extracting("searchControls")
+			.hasFieldOrPropertyWithValue("searchScope", SearchControls.ONELEVEL_SCOPE);
 		assertThat(ReflectionTestUtils.getField(getAuthoritiesMapper(provider), "prefix")).isEqualTo("ROLE_");
 	}
 
@@ -86,7 +85,7 @@ public class LdapAuthenticationProviderBuilderSecurityBuilderTests {
 		LdapAuthenticationProvider provider = ldapProvider();
 
 		assertThat(ReflectionTestUtils.getField(getAuthoritiesPopulator(provider), "groupRoleAttribute"))
-				.isEqualTo("group");
+			.isEqualTo("group");
 	}
 
 	@Test
@@ -95,7 +94,7 @@ public class LdapAuthenticationProviderBuilderSecurityBuilderTests {
 		LdapAuthenticationProvider provider = ldapProvider();
 
 		assertThat(ReflectionTestUtils.getField(getAuthoritiesPopulator(provider), "groupSearchFilter"))
-				.isEqualTo("ou=groupName");
+			.isEqualTo("ou=groupName");
 	}
 
 	@Test
@@ -104,7 +103,8 @@ public class LdapAuthenticationProviderBuilderSecurityBuilderTests {
 		LdapAuthenticationProvider provider = ldapProvider();
 
 		assertThat(ReflectionTestUtils.getField(getAuthoritiesPopulator(provider), "searchControls"))
-				.extracting("searchScope").isEqualTo(SearchControls.SUBTREE_SCOPE);
+			.extracting("searchScope")
+			.isEqualTo(SearchControls.SUBTREE_SCOPE);
 	}
 
 	@Test
@@ -120,8 +120,8 @@ public class LdapAuthenticationProviderBuilderSecurityBuilderTests {
 		this.spring.register(BindAuthenticationConfig.class).autowire();
 
 		this.mockMvc.perform(formLogin().user("bob").password("bobspassword"))
-				.andExpect(authenticated().withUsername("bob")
-						.withAuthorities(Collections.singleton(new SimpleGrantedAuthority("ROLE_DEVELOPERS"))));
+			.andExpect(authenticated().withUsername("bob")
+				.withAuthorities(Collections.singleton(new SimpleGrantedAuthority("ROLE_DEVELOPERS"))));
 	}
 
 	// SEC-2472
@@ -130,13 +130,14 @@ public class LdapAuthenticationProviderBuilderSecurityBuilderTests {
 		this.spring.register(PasswordEncoderConfig.class).autowire();
 
 		this.mockMvc.perform(formLogin().user("bcrypt").password("password"))
-				.andExpect(authenticated().withUsername("bcrypt")
-						.withAuthorities(Collections.singleton(new SimpleGrantedAuthority("ROLE_DEVELOPERS"))));
+			.andExpect(authenticated().withUsername("bcrypt")
+				.withAuthorities(Collections.singleton(new SimpleGrantedAuthority("ROLE_DEVELOPERS"))));
 	}
 
 	private LdapAuthenticationProvider ldapProvider() {
 		return ((List<LdapAuthenticationProvider>) ReflectionTestUtils.getField(this.authenticationManager,
-				"providers")).get(0);
+				"providers"))
+			.get(0);
 	}
 
 	private LdapAuthoritiesPopulator getAuthoritiesPopulator(LdapAuthenticationProvider provider) {
@@ -160,8 +161,8 @@ public class LdapAuthenticationProviderBuilderSecurityBuilderTests {
 	@EnableWebSecurity
 	static class DefaultLdapConfig extends BaseLdapProviderConfig {
 
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+		@Autowired
+		void configure(AuthenticationManagerBuilder auth) throws Exception {
 			// @formatter:off
 			auth
 				.ldapAuthentication()
@@ -170,14 +171,20 @@ public class LdapAuthenticationProviderBuilderSecurityBuilderTests {
 			// @formatter:on
 		}
 
+		@Bean
+		AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration)
+				throws Exception {
+			return authenticationConfiguration.getAuthenticationManager();
+		}
+
 	}
 
 	@Configuration
 	@EnableWebSecurity
 	static class GroupRolesConfig extends BaseLdapProviderConfig {
 
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+		@Autowired
+		void configure(AuthenticationManagerBuilder auth) throws Exception {
 			// @formatter:off
 			auth
 				.ldapAuthentication()
@@ -187,14 +194,20 @@ public class LdapAuthenticationProviderBuilderSecurityBuilderTests {
 			// @formatter:on
 		}
 
+		@Bean
+		AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration)
+				throws Exception {
+			return authenticationConfiguration.getAuthenticationManager();
+		}
+
 	}
 
 	@Configuration
 	@EnableWebSecurity
 	static class GroupSearchConfig extends BaseLdapProviderConfig {
 
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+		@Autowired
+		void configure(AuthenticationManagerBuilder auth) throws Exception {
 			// @formatter:off
 			auth
 				.ldapAuthentication()
@@ -204,14 +217,20 @@ public class LdapAuthenticationProviderBuilderSecurityBuilderTests {
 			// @formatter:on
 		}
 
+		@Bean
+		AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration)
+				throws Exception {
+			return authenticationConfiguration.getAuthenticationManager();
+		}
+
 	}
 
 	@Configuration
 	@EnableWebSecurity
 	static class GroupSubtreeSearchConfig extends BaseLdapProviderConfig {
 
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+		@Autowired
+		void configure(AuthenticationManagerBuilder auth) throws Exception {
 			// @formatter:off
 			auth
 				.ldapAuthentication()
@@ -222,14 +241,20 @@ public class LdapAuthenticationProviderBuilderSecurityBuilderTests {
 			// @formatter:on
 		}
 
+		@Bean
+		AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration)
+				throws Exception {
+			return authenticationConfiguration.getAuthenticationManager();
+		}
+
 	}
 
 	@Configuration
 	@EnableWebSecurity
 	static class RolePrefixConfig extends BaseLdapProviderConfig {
 
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+		@Autowired
+		void configure(AuthenticationManagerBuilder auth) throws Exception {
 			// @formatter:off
 			auth
 				.ldapAuthentication()
@@ -239,14 +264,20 @@ public class LdapAuthenticationProviderBuilderSecurityBuilderTests {
 			// @formatter:on
 		}
 
+		@Bean
+		AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration)
+				throws Exception {
+			return authenticationConfiguration.getAuthenticationManager();
+		}
+
 	}
 
 	@Configuration
 	@EnableWebSecurity
 	static class BindAuthenticationConfig extends BaseLdapServerConfig {
 
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+		@Autowired
+		void configure(AuthenticationManagerBuilder auth) throws Exception {
 			// @formatter:off
 			auth
 				.ldapAuthentication()
@@ -257,14 +288,20 @@ public class LdapAuthenticationProviderBuilderSecurityBuilderTests {
 			// @formatter:on
 		}
 
+		@Bean
+		AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration)
+				throws Exception {
+			return authenticationConfiguration.getAuthenticationManager();
+		}
+
 	}
 
 	@Configuration
 	@EnableWebSecurity
 	static class PasswordEncoderConfig extends BaseLdapServerConfig {
 
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+		@Autowired
+		void configure(AuthenticationManagerBuilder auth) throws Exception {
 			// @formatter:off
 			auth
 				.ldapAuthentication()
@@ -274,6 +311,12 @@ public class LdapAuthenticationProviderBuilderSecurityBuilderTests {
 					.groupSearchFilter("(member={0})")
 					.userDnPatterns("uid={0},ou=people");
 			// @formatter:on
+		}
+
+		@Bean
+		AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration)
+				throws Exception {
+			return authenticationConfiguration.getAuthenticationManager();
 		}
 
 	}
@@ -296,7 +339,7 @@ public class LdapAuthenticationProviderBuilderSecurityBuilderTests {
 	@EnableWebSecurity
 	@EnableGlobalAuthentication
 	@Import(ObjectPostProcessorConfiguration.class)
-	abstract static class BaseLdapProviderConfig extends WebSecurityConfigurerAdapter {
+	abstract static class BaseLdapProviderConfig {
 
 		@Bean
 		BaseLdapPathContextSource contextSource() throws Exception {
@@ -307,15 +350,6 @@ public class LdapAuthenticationProviderBuilderSecurityBuilderTests {
 			contextSource.afterPropertiesSet();
 			return contextSource;
 		}
-
-		@Bean
-		AuthenticationManager authenticationManager(AuthenticationManagerBuilder auth) throws Exception {
-			configure(auth);
-			return auth.build();
-		}
-
-		@Override
-		protected abstract void configure(AuthenticationManagerBuilder auth) throws Exception;
 
 	}
 

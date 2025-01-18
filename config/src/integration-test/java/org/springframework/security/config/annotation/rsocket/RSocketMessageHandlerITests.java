@@ -195,7 +195,7 @@ public class RSocketMessageHandlerITests {
 		String data = "a";
 		assertThatExceptionOfType(ApplicationErrorException.class).isThrownBy(
 				() -> this.requester.route("secure.hello").data(data).retrieveFlux(String.class).collectList().block())
-				.withMessageContaining("Access Denied");
+			.withMessageContaining("Access Denied");
 		assertThat(this.controller.payloads).isEmpty();
 	}
 
@@ -294,7 +294,7 @@ public class RSocketMessageHandlerITests {
 
 		@MessageMapping({ "secure.send", "send" })
 		Mono<Void> send(Mono<String> payload) {
-			return payload.doOnNext(this::add).then(Mono.fromRunnable(() -> doNotifyAll()));
+			return payload.doOnNext(this::add).then(Mono.fromRunnable(this::doNotifyAll));
 		}
 
 		private synchronized void doNotifyAll() {

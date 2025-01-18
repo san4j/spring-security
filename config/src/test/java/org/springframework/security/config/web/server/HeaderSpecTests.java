@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2021 the original author or authors.
+ * Copyright 2002-2022 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -75,7 +75,7 @@ public class HeaderSpecTests {
 		this.expectedHeaders.add(HttpHeaders.EXPIRES, "0");
 		this.expectedHeaders.add(ContentTypeOptionsServerHttpHeadersWriter.X_CONTENT_OPTIONS, "nosniff");
 		this.expectedHeaders.add(XFrameOptionsServerHttpHeadersWriter.X_FRAME_OPTIONS, "DENY");
-		this.expectedHeaders.add(XXssProtectionServerHttpHeadersWriter.X_XSS_PROTECTION, "1 ; mode=block");
+		this.expectedHeaders.add(XXssProtectionServerHttpHeadersWriter.X_XSS_PROTECTION, "0");
 	}
 
 	@Test
@@ -297,6 +297,51 @@ public class HeaderSpecTests {
 	}
 
 	@Test
+	public void headersWhenXssProtectionValueDisabledThenXssProtectionWritten() {
+		this.expectedHeaders.set(XXssProtectionServerHttpHeadersWriter.X_XSS_PROTECTION, "0");
+		// @formatter:off
+		this.http.headers()
+				.xssProtection()
+				.headerValue(XXssProtectionServerHttpHeadersWriter.HeaderValue.DISABLED);
+		// @formatter:on
+		assertHeaders();
+	}
+
+	@Test
+	public void headersWhenXssProtectionValueEnabledThenXssProtectionWritten() {
+		this.expectedHeaders.set(XXssProtectionServerHttpHeadersWriter.X_XSS_PROTECTION, "1");
+		// @formatter:off
+		this.http.headers()
+				.xssProtection()
+				.headerValue(XXssProtectionServerHttpHeadersWriter.HeaderValue.ENABLED);
+		// @formatter:on
+		assertHeaders();
+	}
+
+	@Test
+	public void headersWhenXssProtectionValueEnabledModeBlockThenXssProtectionWritten() {
+		this.expectedHeaders.set(XXssProtectionServerHttpHeadersWriter.X_XSS_PROTECTION, "1; mode=block");
+		// @formatter:off
+		this.http.headers()
+				.xssProtection()
+				.headerValue(XXssProtectionServerHttpHeadersWriter.HeaderValue.ENABLED_MODE_BLOCK);
+		// @formatter:on
+		assertHeaders();
+	}
+
+	@Test
+	public void headersWhenXssProtectionValueDisabledInLambdaThenXssProtectionWritten() {
+		this.expectedHeaders.set(XXssProtectionServerHttpHeadersWriter.X_XSS_PROTECTION, "0");
+		// @formatter:off
+		this.http.headers()
+				.xssProtection((xssProtection) ->
+						xssProtection.headerValue(XXssProtectionServerHttpHeadersWriter.HeaderValue.DISABLED)
+				);
+		// @formatter:on
+		assertHeaders();
+	}
+
+	@Test
 	public void headersWhenFeaturePolicyEnabledThenFeaturePolicyWritten() {
 		String policyDirectives = "Feature-Policy";
 		this.expectedHeaders.add(FeaturePolicyServerHttpHeadersWriter.FEATURE_POLICY, policyDirectives);
@@ -414,7 +459,7 @@ public class HeaderSpecTests {
 	public void headersWhenCrossOriginPoliciesCustomEnabledThenCustomCrossOriginPoliciesWritten() {
 		this.expectedHeaders.add(CrossOriginOpenerPolicyServerHttpHeadersWriter.OPENER_POLICY,
 				CrossOriginOpenerPolicyServerHttpHeadersWriter.CrossOriginOpenerPolicy.SAME_ORIGIN_ALLOW_POPUPS
-						.getPolicy());
+					.getPolicy());
 		this.expectedHeaders.add(CrossOriginEmbedderPolicyServerHttpHeadersWriter.EMBEDDER_POLICY,
 				CrossOriginEmbedderPolicyServerHttpHeadersWriter.CrossOriginEmbedderPolicy.REQUIRE_CORP.getPolicy());
 		this.expectedHeaders.add(CrossOriginResourcePolicyServerHttpHeadersWriter.RESOURCE_POLICY,
@@ -437,7 +482,7 @@ public class HeaderSpecTests {
 	public void headersWhenCrossOriginPoliciesCustomEnabledInLambdaThenCustomCrossOriginPoliciesWritten() {
 		this.expectedHeaders.add(CrossOriginOpenerPolicyServerHttpHeadersWriter.OPENER_POLICY,
 				CrossOriginOpenerPolicyServerHttpHeadersWriter.CrossOriginOpenerPolicy.SAME_ORIGIN_ALLOW_POPUPS
-						.getPolicy());
+					.getPolicy());
 		this.expectedHeaders.add(CrossOriginEmbedderPolicyServerHttpHeadersWriter.EMBEDDER_POLICY,
 				CrossOriginEmbedderPolicyServerHttpHeadersWriter.CrossOriginEmbedderPolicy.REQUIRE_CORP.getPolicy());
 		this.expectedHeaders.add(CrossOriginResourcePolicyServerHttpHeadersWriter.RESOURCE_POLICY,
@@ -466,8 +511,10 @@ public class HeaderSpecTests {
 
 	private void assertHeaders() {
 		WebTestClient client = buildClient();
-		FluxExchangeResult<String> response = client.get().uri("https://example.com/").exchange()
-				.returnResult(String.class);
+		FluxExchangeResult<String> response = client.get()
+			.uri("https://example.com/")
+			.exchange()
+			.returnResult(String.class);
 		Map<String, List<String>> responseHeaders = response.getResponseHeaders();
 		if (!this.expectedHeaders.isEmpty()) {
 			assertThat(responseHeaders).describedAs(response.toString()).containsAllEntriesOf(this.expectedHeaders);

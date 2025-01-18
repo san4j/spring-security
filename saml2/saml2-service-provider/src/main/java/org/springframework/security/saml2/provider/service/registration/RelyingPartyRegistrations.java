@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,10 +21,12 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collection;
 
+import org.opensaml.saml.common.xml.SAMLConstants;
+import org.opensaml.saml.saml2.metadata.EntityDescriptor;
+
 import org.springframework.core.io.DefaultResourceLoader;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.security.saml2.Saml2Exception;
-import org.springframework.security.saml2.provider.service.registration.RelyingPartyRegistration.AssertingPartyDetails;
 
 /**
  * A utility class for constructing instances of {@link RelyingPartyRegistration}
@@ -36,8 +38,6 @@ import org.springframework.security.saml2.provider.service.registration.RelyingP
  */
 public final class RelyingPartyRegistrations {
 
-	private static final OpenSamlMetadataAssertingPartyDetailsConverter assertingPartyMetadataConverter = new OpenSamlMetadataAssertingPartyDetailsConverter();
-
 	private static final ResourceLoader resourceLoader = new DefaultResourceLoader();
 
 	private RelyingPartyRegistrations() {
@@ -47,8 +47,8 @@ public final class RelyingPartyRegistrations {
 	 * Return a {@link RelyingPartyRegistration.Builder} based off of the given SAML 2.0
 	 * Asserting Party (IDP) metadata location.
 	 *
-	 * Valid locations can be classpath- or file-based or they can be HTTP endpoints. Some
-	 * valid endpoints might include:
+	 * Valid locations can be classpath- or file-based or they can be HTTPS endpoints.
+	 * Some valid endpoints might include:
 	 *
 	 * <pre>
 	 *   metadataLocation = "classpath:asserting-party-metadata.xml";
@@ -71,8 +71,8 @@ public final class RelyingPartyRegistrations {
 	 * about the asserting party. Thus, you will need to remember to still populate
 	 * anything about the relying party, like any private keys the relying party will use
 	 * for signing AuthnRequests.
-	 * @param metadataLocation The classpath- or file-based locations or HTTP endpoints of
-	 * the asserting party metadata file
+	 * @param metadataLocation The classpath- or file-based locations or HTTPS endpoints
+	 * of the asserting party metadata file
 	 * @return the {@link RelyingPartyRegistration.Builder} for further configuration
 	 */
 	public static RelyingPartyRegistration.Builder fromMetadataLocation(String metadataLocation) {
@@ -132,8 +132,8 @@ public final class RelyingPartyRegistrations {
 	 * Return a {@link Collection} of {@link RelyingPartyRegistration.Builder}s based off
 	 * of the given SAML 2.0 Asserting Party (IDP) metadata location.
 	 *
-	 * Valid locations can be classpath- or file-based or they can be HTTP endpoints. Some
-	 * valid endpoints might include:
+	 * Valid locations can be classpath- or file-based or they can be HTTPS endpoints.
+	 * Some valid endpoints might include:
 	 *
 	 * <pre>
 	 *   metadataLocation = "classpath:asserting-party-metadata.xml";
@@ -157,7 +157,7 @@ public final class RelyingPartyRegistrations {
 	 * about the asserting party. Thus, you will need to remember to still populate
 	 * anything about the relying party, like any private keys the relying party will use
 	 * for signing AuthnRequests.
-	 * @param location The classpath- or file-based locations or HTTP endpoints of the
+	 * @param location The classpath- or file-based locations or HTTPS endpoints of the
 	 * asserting party metadata file
 	 * @return the {@link Collection} of {@link RelyingPartyRegistration.Builder}s for
 	 * further configuration
@@ -216,8 +216,16 @@ public final class RelyingPartyRegistrations {
 	 */
 	public static Collection<RelyingPartyRegistration.Builder> collectionFromMetadata(InputStream source) {
 		Collection<RelyingPartyRegistration.Builder> builders = new ArrayList<>();
-		for (AssertingPartyDetails.Builder builder : assertingPartyMetadataConverter.convert(source)) {
-			builders.add(RelyingPartyRegistration.withAssertingPartyDetails(builder.build()));
+		for (EntityDescriptor descriptor : OpenSamlMetadataUtils.descriptors(source)) {
+			if (descriptor.getIDPSSODescriptor(SAMLConstants.SAML20P_NS) != null) {
+				OpenSamlAssertingPartyDetails assertingParty = OpenSamlAssertingPartyDetails
+					.withEntityDescriptor(descriptor)
+					.build();
+				builders.add(new OpenSamlRelyingPartyRegistration.Builder(assertingParty));
+			}
+		}
+		if (builders.isEmpty()) {
+			throw new Saml2Exception("Metadata response is missing the necessary IDPSSODescriptor element");
 		}
 		return builders;
 	}

@@ -1,11 +1,15 @@
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import org.springframework.gradle.xsd.CreateVersionlessXsdTask
+import trang.RncToXsd
 
 apply plugin: 'io.spring.convention.spring-module'
 apply plugin: 'trang'
 apply plugin: 'kotlin'
 
-repositories {
-	maven { url "https://build.shibboleth.net/nexus/content/repositories/releases/" }
+configurations {
+	opensaml5 {
+		extendsFrom(optional, tests)
+	}
 }
 
 dependencies {
@@ -17,9 +21,11 @@ dependencies {
 	api 'org.springframework:spring-context'
 	api 'org.springframework:spring-core'
 
+	optional project(':spring-security-data')
 	optional project(':spring-security-ldap')
 	optional project(':spring-security-messaging')
-	optional project(':spring-security-saml2-service-provider')
+	optional project(path: ':spring-security-saml2-service-provider')
+	opensaml5 project(path: ':spring-security-saml2-service-provider', configuration: 'opensamlFiveMain')
 	optional project(':spring-security-oauth2-client')
 	optional project(':spring-security-oauth2-jose')
 	optional project(':spring-security-oauth2-resource-server')
@@ -37,17 +43,19 @@ dependencies {
 	optional 'org.jetbrains.kotlin:kotlin-reflect'
 	optional 'org.jetbrains.kotlin:kotlin-stdlib-jdk8'
 	optional 'jakarta.annotation:jakarta.annotation-api'
+	optional libs.webauthn4j.core
 
 	provided 'jakarta.servlet:jakarta.servlet-api'
 
 	testImplementation project(':spring-security-aspects')
+	testImplementation project(':spring-security-cas')
 	testImplementation project(':spring-security-test')
 	testImplementation project(path : ':spring-security-core', configuration : 'tests')
 	testImplementation project(path : ':spring-security-ldap', configuration : 'tests')
 	testImplementation project(path : ':spring-security-oauth2-client', configuration : 'tests')
 	testImplementation project(path : ':spring-security-oauth2-resource-server', configuration : 'tests')
+	testImplementation project(':spring-security-saml2-service-provider')
 	testImplementation project(path : ':spring-security-saml2-service-provider', configuration : 'tests')
-	testImplementation project(path : ':spring-security-saml2-service-provider', configuration : 'opensaml4MainImplementation')
 	testImplementation project(path : ':spring-security-web', configuration : 'tests')
 	testImplementation "jakarta.inject:jakarta.inject-api"
 	testImplementation "org.assertj:assertj-core"
@@ -63,9 +71,12 @@ dependencies {
 	testImplementation 'io.rsocket:rsocket-transport-netty'
 	testImplementation 'jakarta.annotation:jakarta.annotation-api'
 	testImplementation 'jakarta.xml.bind:jakarta.xml.bind-api'
+	testImplementation 'jakarta.websocket:jakarta.websocket-api'
+	testImplementation 'jakarta.websocket:jakarta.websocket-client-api'
 	testImplementation 'ldapsdk:ldapsdk:4.1'
-	testImplementation('net.sourceforge.htmlunit:htmlunit') {
+	testImplementation('org.htmlunit:htmlunit') {
 		exclude group: 'commons-logging', module: 'commons-logging'
+		exclude group: 'xml-apis', module: 'xml-apis'
 	}
 	testImplementation "org.apache.directory.server:apacheds-core"
 	testImplementation "org.apache.directory.server:apacheds-core-entry"
@@ -78,9 +89,9 @@ dependencies {
 	testImplementation "org.hibernate.orm:hibernate-core"
 	testImplementation 'org.hsqldb:hsqldb'
 	testImplementation 'org.mockito:mockito-core'
-	testImplementation "org.mockito:mockito-inline"
-	testImplementation('org.seleniumhq.selenium:htmlunit-driver') {
+	testImplementation('org.seleniumhq.selenium:htmlunit3-driver') {
 		exclude group: 'commons-logging', module: 'commons-logging'
+		exclude group: 'xml-apis', module: 'xml-apis'
 	}
 	testImplementation('org.seleniumhq.selenium:selenium-java') {
 		exclude group: 'commons-logging', module: 'commons-logging'
@@ -91,21 +102,59 @@ dependencies {
 	testImplementation 'org.springframework:spring-jdbc'
 	testImplementation 'org.springframework:spring-orm'
 	testImplementation 'org.springframework:spring-tx'
+	testImplementation 'org.springframework:spring-core-test'
 	testImplementation ('org.springframework.data:spring-data-jpa') {
 		exclude group: 'org.aspectj', module: 'aspectjrt'
 	}
 	testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core'
 	testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-reactor'
 	testImplementation 'io.mockk:mockk'
+	testImplementation 'org.junit.platform:junit-platform-launcher'
+	testImplementation 'org.apache.maven.resolver:maven-resolver-connector-basic'
+	testImplementation ('org.apache.maven.resolver:maven-resolver-impl') {
+		exclude(group: "javax.annotation", module: "javax.annotation-api")
+	}
+	testImplementation ('org.apache.maven:maven-resolver-provider') {
+		exclude(group: "javax.inject", module: "javax.inject")
+		exclude(group: "javax.annotation", module: "javax.annotation-api")
+	}
+	testImplementation ('org.apache.maven.resolver:maven-resolver-transport-http') {
+		exclude group: "org.slf4j", module: "jcl-over-slf4j"
+	}
+	testImplementation libs.org.instancio.instancio.junit
+	testImplementation libs.org.eclipse.jetty.jetty.server
+	testImplementation libs.org.eclipse.jetty.jetty.servlet
 
 	testRuntimeOnly 'org.hsqldb:hsqldb'
 }
 
-
-rncToXsd {
+def rncToXsd = tasks.named('rncToXsd', RncToXsd)
+rncToXsd.configure {
 	rncDir = file('src/main/resources/org/springframework/security/config/')
 	xsdDir = rncDir
 	xslFile = new File(rncDir, 'spring-security.xsl')
+}
+
+def versionlessXsd = tasks.register("versionlessXsd", CreateVersionlessXsdTask) {
+	inputFiles.from(rncToXsd.map { task -> project.fileTree(task.xsdDir) })
+	versionlessXsdFile = project.layout.buildDirectory.file("versionlessXsd/spring-security.xsd")
+}
+
+tasks.named('processResources', ProcessResources).configure {
+	from(versionlessXsd) {
+		into 'org/springframework/security/config/'
+	}
+	from(rncToXsd) {
+		duplicatesStrategy DuplicatesStrategy.EXCLUDE
+		into 'org/springframework/security/config/'
+	}
+}
+
+tasks.named('sourcesJar', Jar).configure {
+	from(rncToXsd) {
+		duplicatesStrategy DuplicatesStrategy.EXCLUDE
+		into 'org/springframework/security/config/'
+	}
 }
 
 tasks.withType(KotlinCompile).configureEach {
@@ -117,4 +166,31 @@ tasks.withType(KotlinCompile).configureEach {
 	}
 }
 
-build.dependsOn rncToXsd
+configure(project.tasks.withType(Test)) {
+	doFirst {
+		systemProperties['springSecurityVersion'] = version
+	}
+}
+
+test {
+	onOutput { descriptor, event ->
+		if (!project.hasProperty('serialization')) {
+			return
+		}
+		if (descriptor.name=='listClassesMissingSerialVersion()') {
+			logger.lifecycle(event.message)
+		}
+	}
+}
+
+tasks.register("opensaml5Test", Test) {
+	filter {
+		includeTestsMatching "org.springframework.security.config.annotation.web.configurers.saml2.*"
+	}
+	useJUnitPlatform()
+	classpath = sourceSets.main.output + sourceSets.test.output + configurations.opensaml5
+}
+
+tasks.named("check") {
+	dependsOn opensaml5Test
+}

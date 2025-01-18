@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,19 @@
 
 package org.springframework.security.web.access.intercept;
 
+import java.io.IOException;
 import java.util.function.Supplier;
 
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.access.AccessDeniedException;
@@ -34,11 +38,13 @@ import org.springframework.security.authorization.AuthenticatedAuthorizationMana
 import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.authorization.AuthorizationEventPublisher;
 import org.springframework.security.authorization.AuthorizationManager;
+import org.springframework.security.authorization.AuthorizationResult;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.context.SecurityContextHolderStrategy;
 import org.springframework.security.core.context.SecurityContextImpl;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.util.WebUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -48,7 +54,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
@@ -59,6 +67,24 @@ import static org.mockito.Mockito.verifyNoInteractions;
  */
 public class AuthorizationFilterTests {
 
+	private static final String ALREADY_FILTERED_ATTRIBUTE_NAME = "org.springframework.security.web.access.intercept.AuthorizationFilter.APPLIED";
+
+	private AuthorizationFilter filter;
+
+	private AuthorizationManager<HttpServletRequest> authorizationManager;
+
+	private MockHttpServletRequest request = new MockHttpServletRequest();
+
+	private final MockHttpServletResponse response = new MockHttpServletResponse();
+
+	private final FilterChain chain = new MockFilterChain();
+
+	@BeforeEach
+	public void setup() {
+		this.authorizationManager = mock(AuthorizationManager.class);
+		this.filter = new AuthorizationFilter(this.authorizationManager);
+	}
+
 	@AfterEach
 	public void tearDown() {
 		SecurityContextHolder.clearContext();
@@ -67,8 +93,9 @@ public class AuthorizationFilterTests {
 	@Test
 	public void filterWhenAuthorizationManagerVerifyPassesThenNextFilter() throws Exception {
 		AuthorizationManager<HttpServletRequest> mockAuthorizationManager = mock(AuthorizationManager.class);
+		given(mockAuthorizationManager.authorize(any(), any())).willCallRealMethod();
 		given(mockAuthorizationManager.check(any(Supplier.class), any(HttpServletRequest.class)))
-				.willReturn(new AuthorizationDecision(true));
+			.willReturn(new AuthorizationDecision(true));
 		AuthorizationFilter filter = new AuthorizationFilter(mockAuthorizationManager);
 		TestingAuthenticationToken authenticationToken = new TestingAuthenticationToken("user", "password");
 
@@ -94,6 +121,7 @@ public class AuthorizationFilterTests {
 	@Test
 	public void filterWhenAuthorizationManagerVerifyThrowsAccessDeniedExceptionThenStopFilterChain() {
 		AuthorizationManager<HttpServletRequest> mockAuthorizationManager = mock(AuthorizationManager.class);
+		given(mockAuthorizationManager.authorize(any(), any())).willCallRealMethod();
 		AuthorizationFilter filter = new AuthorizationFilter(mockAuthorizationManager);
 		TestingAuthenticationToken authenticationToken = new TestingAuthenticationToken("user", "password");
 
@@ -105,12 +133,12 @@ public class AuthorizationFilterTests {
 		MockHttpServletResponse mockResponse = new MockHttpServletResponse();
 		FilterChain mockFilterChain = mock(FilterChain.class);
 
-		willThrow(new AccessDeniedException("Access Denied")).given(mockAuthorizationManager).check(any(),
-				eq(mockRequest));
+		willThrow(new AccessDeniedException("Access Denied")).given(mockAuthorizationManager)
+			.check(any(), eq(mockRequest));
 
 		assertThatExceptionOfType(AccessDeniedException.class)
-				.isThrownBy(() -> filter.doFilter(mockRequest, mockResponse, mockFilterChain))
-				.withMessage("Access Denied");
+			.isThrownBy(() -> filter.doFilter(mockRequest, mockResponse, mockFilterChain))
+			.withMessage("Access Denied");
 
 		ArgumentCaptor<Supplier<Authentication>> authenticationCaptor = ArgumentCaptor.forClass(Supplier.class);
 		verify(mockAuthorizationManager).check(authenticationCaptor.capture(), eq(mockRequest));
@@ -128,8 +156,8 @@ public class AuthorizationFilterTests {
 		FilterChain mockFilterChain = mock(FilterChain.class);
 
 		assertThatExceptionOfType(AuthenticationCredentialsNotFoundException.class)
-				.isThrownBy(() -> filter.doFilter(mockRequest, mockResponse, mockFilterChain))
-				.withMessage("An Authentication object was not found in the SecurityContext");
+			.isThrownBy(() -> filter.doFilter(mockRequest, mockResponse, mockFilterChain))
+			.withMessage("An Authentication object was not found in the SecurityContext");
 
 		verifyNoInteractions(mockFilterChain);
 	}
@@ -146,7 +174,7 @@ public class AuthorizationFilterTests {
 		AuthorizationManager<HttpServletRequest> authorizationManager = mock(AuthorizationManager.class);
 		AuthorizationFilter authorizationFilter = new AuthorizationFilter(authorizationManager);
 		assertThatIllegalArgumentException().isThrownBy(() -> authorizationFilter.setAuthorizationEventPublisher(null))
-				.withMessage("eventPublisher cannot be null");
+			.withMessage("eventPublisher cannot be null");
 	}
 
 	@Test
@@ -162,6 +190,7 @@ public class AuthorizationFilterTests {
 		SecurityContextHolder.setContext(securityContext);
 
 		AuthorizationEventPublisher eventPublisher = mock(AuthorizationEventPublisher.class);
+		doCallRealMethod().when(eventPublisher).publishAuthorizationEvent(any(), any(), any(AuthorizationResult.class));
 		authorizationFilter.setAuthorizationEventPublisher(eventPublisher);
 		authorizationFilter.doFilter(mockRequest, mockResponse, mockFilterChain);
 		verify(eventPublisher).publishAuthorizationEvent(any(Supplier.class), any(HttpServletRequest.class),
@@ -171,6 +200,7 @@ public class AuthorizationFilterTests {
 	@Test
 	public void doFilterWhenErrorThenDoFilter() throws Exception {
 		AuthorizationManager<HttpServletRequest> authorizationManager = mock(AuthorizationManager.class);
+		given(authorizationManager.authorize(any(), any())).willCallRealMethod();
 		AuthorizationFilter authorizationFilter = new AuthorizationFilter(authorizationManager);
 		MockHttpServletRequest mockRequest = new MockHttpServletRequest(null, "/path");
 		mockRequest.setDispatcherType(DispatcherType.ERROR);
@@ -198,37 +228,106 @@ public class AuthorizationFilterTests {
 	}
 
 	@Test
-	public void doFilterNestedErrorDispatchWhenAuthorizationManagerThenUses() throws Exception {
-		AuthorizationManager<HttpServletRequest> authorizationManager = mock(AuthorizationManager.class);
-		AuthorizationFilter authorizationFilter = new AuthorizationFilter(authorizationManager);
-		authorizationFilter.setShouldFilterAllDispatcherTypes(true);
-		MockHttpServletRequest mockRequest = new MockHttpServletRequest(null, "/path");
-		mockRequest.setDispatcherType(DispatcherType.ERROR);
-		mockRequest.setAttribute(WebUtils.ERROR_REQUEST_URI_ATTRIBUTE, "/error");
-		MockHttpServletResponse mockResponse = new MockHttpServletResponse();
-		FilterChain mockFilterChain = mock(FilterChain.class);
-
-		authorizationFilter.doFilterNestedErrorDispatch(mockRequest, mockResponse, mockFilterChain);
-		verify(authorizationManager).check(any(Supplier.class), any(HttpServletRequest.class));
+	public void doFilterWhenObserveOncePerRequestTrueAndIsAppliedThenNotInvoked() throws ServletException, IOException {
+		setIsAppliedTrue();
+		this.filter.setObserveOncePerRequest(true);
+		this.filter.doFilter(this.request, this.response, this.chain);
+		verifyNoInteractions(this.authorizationManager);
 	}
 
 	@Test
-	public void doFilterNestedErrorDispatchWhenAuthorizationEventPublisherThenUses() throws Exception {
-		AuthorizationFilter authorizationFilter = new AuthorizationFilter(
-				AuthenticatedAuthorizationManager.authenticated());
-		MockHttpServletRequest mockRequest = new MockHttpServletRequest(null, "/path");
-		MockHttpServletResponse mockResponse = new MockHttpServletResponse();
-		FilterChain mockFilterChain = mock(FilterChain.class);
+	public void doFilterWhenObserveOncePerRequestTrueAndNotAppliedThenInvoked() throws ServletException, IOException {
+		given(this.authorizationManager.authorize(any(), any())).willCallRealMethod();
+		this.filter.setObserveOncePerRequest(true);
+		this.filter.doFilter(this.request, this.response, this.chain);
+		verify(this.authorizationManager).check(any(), any());
+	}
 
-		SecurityContext securityContext = new SecurityContextImpl();
-		securityContext.setAuthentication(new TestingAuthenticationToken("user", "password", "ROLE_USER"));
-		SecurityContextHolder.setContext(securityContext);
+	@Test
+	public void doFilterWhenObserveOncePerRequestFalseAndIsAppliedThenInvoked() throws ServletException, IOException {
+		setIsAppliedTrue();
+		given(this.authorizationManager.authorize(any(), any())).willCallRealMethod();
+		this.filter.setObserveOncePerRequest(false);
+		this.filter.doFilter(this.request, this.response, this.chain);
+		verify(this.authorizationManager).check(any(), any());
+	}
 
-		AuthorizationEventPublisher eventPublisher = mock(AuthorizationEventPublisher.class);
-		authorizationFilter.setAuthorizationEventPublisher(eventPublisher);
-		authorizationFilter.doFilterNestedErrorDispatch(mockRequest, mockResponse, mockFilterChain);
-		verify(eventPublisher).publishAuthorizationEvent(any(Supplier.class), any(HttpServletRequest.class),
-				any(AuthorizationDecision.class));
+	@Test
+	public void doFilterWhenObserveOncePerRequestFalseAndNotAppliedThenInvoked() throws ServletException, IOException {
+		given(this.authorizationManager.authorize(any(), any())).willCallRealMethod();
+		this.filter.setObserveOncePerRequest(false);
+		this.filter.doFilter(this.request, this.response, this.chain);
+		verify(this.authorizationManager).check(any(), any());
+	}
+
+	@Test
+	public void doFilterWhenFilterErrorDispatchFalseAndIsErrorThenNotInvoked() throws ServletException, IOException {
+		this.request.setDispatcherType(DispatcherType.ERROR);
+		this.filter.setFilterErrorDispatch(false);
+		this.filter.doFilter(this.request, this.response, this.chain);
+		verifyNoInteractions(this.authorizationManager);
+	}
+
+	@Test
+	public void doFilterWhenFilterErrorDispatchTrueAndIsErrorThenInvoked() throws ServletException, IOException {
+		given(this.authorizationManager.authorize(any(), any())).willCallRealMethod();
+		this.request.setDispatcherType(DispatcherType.ERROR);
+		this.filter.setFilterErrorDispatch(true);
+		this.filter.doFilter(this.request, this.response, this.chain);
+		verify(this.authorizationManager).check(any(), any());
+	}
+
+	@Test
+	public void doFilterWhenFilterThenSetAlreadyFilteredAttribute() throws ServletException, IOException {
+		this.request = mock(MockHttpServletRequest.class);
+		this.filter.doFilter(this.request, this.response, this.chain);
+		verify(this.request).setAttribute(ALREADY_FILTERED_ATTRIBUTE_NAME, Boolean.TRUE);
+	}
+
+	@Test
+	public void doFilterWhenFilterThenRemoveAlreadyFilteredAttribute() throws ServletException, IOException {
+		this.request = spy(MockHttpServletRequest.class);
+		this.filter.doFilter(this.request, this.response, this.chain);
+		verify(this.request).setAttribute(ALREADY_FILTERED_ATTRIBUTE_NAME, Boolean.TRUE);
+		assertThat(this.request.getAttribute(ALREADY_FILTERED_ATTRIBUTE_NAME)).isNull();
+	}
+
+	@Test
+	public void doFilterWhenFilterAsyncDispatchTrueAndIsAsyncThenInvoked() throws ServletException, IOException {
+		given(this.authorizationManager.authorize(any(), any())).willCallRealMethod();
+		this.request.setDispatcherType(DispatcherType.ASYNC);
+		this.filter.setFilterAsyncDispatch(true);
+		this.filter.doFilter(this.request, this.response, this.chain);
+		verify(this.authorizationManager).check(any(), any());
+	}
+
+	@Test
+	public void doFilterWhenFilterAsyncDispatchFalseAndIsAsyncThenNotInvoked() throws ServletException, IOException {
+		this.request.setDispatcherType(DispatcherType.ASYNC);
+		this.filter.setFilterAsyncDispatch(false);
+		this.filter.doFilter(this.request, this.response, this.chain);
+		verifyNoInteractions(this.authorizationManager);
+	}
+
+	@Test
+	public void filterWhenFilterErrorDispatchDefaultThenTrue() {
+		Boolean filterErrorDispatch = (Boolean) ReflectionTestUtils.getField(this.filter, "filterErrorDispatch");
+		assertThat(filterErrorDispatch).isTrue();
+	}
+
+	@Test
+	public void filterWhenFilterAsyncDispatchDefaultThenTrue() {
+		Boolean filterAsyncDispatch = (Boolean) ReflectionTestUtils.getField(this.filter, "filterAsyncDispatch");
+		assertThat(filterAsyncDispatch).isTrue();
+	}
+
+	@Test
+	public void filterWhenObserveOncePerRequestDefaultThenFalse() {
+		assertThat(this.filter.isObserveOncePerRequest()).isFalse();
+	}
+
+	private void setIsAppliedTrue() {
+		this.request.setAttribute(ALREADY_FILTERED_ATTRIBUTE_NAME, Boolean.TRUE);
 	}
 
 }

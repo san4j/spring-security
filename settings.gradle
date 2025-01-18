@@ -1,18 +1,17 @@
 pluginManagement {
 	repositories {
 		gradlePluginPortal()
-		maven { url 'https://repo.spring.io/plugins-release' }
 	}
 }
 
 plugins {
-	id "com.gradle.enterprise" version "3.10.2"
-	id "io.spring.ge.conventions" version "0.0.7"
+	id "io.spring.develocity.conventions" version "0.0.22"
 }
 
 dependencyResolutionManagement {
 	repositories {
 		mavenCentral()
+		maven { url "https://repo.spring.io/milestone" }
 	}
 }
 

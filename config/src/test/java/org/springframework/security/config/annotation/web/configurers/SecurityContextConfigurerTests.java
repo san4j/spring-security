@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2019 the original author or authors.
+ * Copyright 2002-2022 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,16 +28,19 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.config.annotation.ObjectPostProcessor;
-import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
+import org.springframework.security.config.ObjectPostProcessor;
+import org.springframework.security.config.TestDeferredSecurityContext;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.builders.TestHttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
 import org.springframework.security.config.test.SpringTestContext;
 import org.springframework.security.config.test.SpringTestContextExtension;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.userdetails.PasswordEncodedUser;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.FilterChainProxy;
+import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.context.HttpRequestResponseHolder;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.NullSecurityContextRepository;
@@ -81,10 +84,10 @@ public class SecurityContextConfigurerTests {
 	@Test
 	public void securityContextWhenInvokedTwiceThenUsesOriginalSecurityContextRepository() throws Exception {
 		this.spring.register(DuplicateDoesNotOverrideConfig.class).autowire();
-		given(DuplicateDoesNotOverrideConfig.SCR.loadContext(any(HttpServletRequest.class)))
-				.willReturn(() -> mock(SecurityContext.class));
+		given(DuplicateDoesNotOverrideConfig.SCR.loadDeferredContext(any(HttpServletRequest.class)))
+			.willReturn(new TestDeferredSecurityContext(mock(SecurityContext.class), false));
 		this.mvc.perform(get("/"));
-		verify(DuplicateDoesNotOverrideConfig.SCR).loadContext(any(HttpServletRequest.class));
+		verify(DuplicateDoesNotOverrideConfig.SCR).loadDeferredContext(any(HttpServletRequest.class));
 	}
 
 	// SEC-2932
@@ -135,21 +138,22 @@ public class SecurityContextConfigurerTests {
 		// @formatter:on
 		MvcResult mvcResult = this.mvc.perform(formLogin()).andReturn();
 		SecurityContext securityContext = repository
-				.loadContext(new HttpRequestResponseHolder(mvcResult.getRequest(), mvcResult.getResponse()));
+			.loadContext(new HttpRequestResponseHolder(mvcResult.getRequest(), mvcResult.getResponse()));
 		assertThat(securityContext.getAuthentication()).isNotNull();
 	}
 
-	@Configuration
+	@Configuration(proxyBeanMethods = false)
 	@EnableWebSecurity
-	static class ObjectPostProcessorConfig extends WebSecurityConfigurerAdapter {
+	static class ObjectPostProcessorConfig {
 
 		static ObjectPostProcessor<Object> objectPostProcessor = spy(ReflectingObjectPostProcessor.class);
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.securityContext();
+			return http.build();
 			// @formatter:on
 		}
 
@@ -171,18 +175,19 @@ public class SecurityContextConfigurerTests {
 
 	@Configuration
 	@EnableWebSecurity
-	static class DuplicateDoesNotOverrideConfig extends WebSecurityConfigurerAdapter {
+	static class DuplicateDoesNotOverrideConfig {
 
 		static SecurityContextRepository SCR = mock(SecurityContextRepository.class);
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.securityContext()
 					.securityContextRepository(SCR)
 					.and()
 				.securityContext();
+			return http.build();
 			// @formatter:on
 		}
 
@@ -190,14 +195,11 @@ public class SecurityContextConfigurerTests {
 
 	@Configuration
 	@EnableWebSecurity
-	static class SecurityContextRepositoryDefaultsSecurityContextRepositoryConfig extends WebSecurityConfigurerAdapter {
+	static class SecurityContextRepositoryDefaultsSecurityContextRepositoryConfig {
 
-		SecurityContextRepositoryDefaultsSecurityContextRepositoryConfig() {
-			super(true);
-		}
-
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+			TestHttpSecurity.disableDefaults(http);
 			// @formatter:off
 			http
 				.addFilter(new WebAsyncManagerIntegrationFilter())
@@ -210,73 +212,64 @@ public class SecurityContextConfigurerTests {
 					.and()
 				.httpBasic();
 			// @formatter:on
+			return http.build();
 		}
 
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
-			// @formatter:off
-			auth
-				.inMemoryAuthentication()
-				.withUser("user").password("password").roles("USER");
-			// @formatter:on
+		@Bean
+		UserDetailsService userDetailsService() {
+			return new InMemoryUserDetailsManager(PasswordEncodedUser.user());
 		}
 
 	}
 
 	@Configuration
 	@EnableWebSecurity
-	static class SecurityContextWithDefaultsInLambdaConfig extends WebSecurityConfigurerAdapter {
+	static class SecurityContextWithDefaultsInLambdaConfig {
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.formLogin(withDefaults())
 				.securityContext(withDefaults());
 			// @formatter:on
+			return http.build();
 		}
 
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
-			// @formatter:off
-			auth
-				.inMemoryAuthentication()
-					.withUser(PasswordEncodedUser.user());
-			// @formatter:on
+		@Bean
+		UserDetailsService userDetailsService() {
+			return new InMemoryUserDetailsManager(PasswordEncodedUser.user());
 		}
 
 	}
 
 	@Configuration
 	@EnableWebSecurity
-	static class SecurityContextDisabledInLambdaConfig extends WebSecurityConfigurerAdapter {
+	static class SecurityContextDisabledInLambdaConfig {
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.formLogin(withDefaults())
 				.securityContext(AbstractHttpConfigurer::disable);
 			// @formatter:on
+			return http.build();
 		}
 
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
-			// @formatter:off
-			auth
-				.inMemoryAuthentication()
-					.withUser(PasswordEncodedUser.user());
-			// @formatter:on
+		@Bean
+		UserDetailsService userDetailsService() {
+			return new InMemoryUserDetailsManager(PasswordEncodedUser.user());
 		}
 
 	}
 
 	@Configuration
 	@EnableWebSecurity
-	static class NullSecurityContextRepositoryInLambdaConfig extends WebSecurityConfigurerAdapter {
+	static class NullSecurityContextRepositoryInLambdaConfig {
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 					.formLogin(withDefaults())
@@ -285,25 +278,22 @@ public class SecurityContextConfigurerTests {
 									.securityContextRepository(new NullSecurityContextRepository())
 					);
 			// @formatter:on
+			return http.build();
 		}
 
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
-			// @formatter:off
-			auth
-					.inMemoryAuthentication()
-					.withUser(PasswordEncodedUser.user());
-			// @formatter:on
+		@Bean
+		UserDetailsService userDetailsService() {
+			return new InMemoryUserDetailsManager(PasswordEncodedUser.user());
 		}
 
 	}
 
 	@Configuration
 	@EnableWebSecurity
-	static class RequireExplicitSaveConfig extends WebSecurityConfigurerAdapter {
+	static class RequireExplicitSaveConfig {
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.formLogin(withDefaults())
@@ -311,15 +301,12 @@ public class SecurityContextConfigurerTests {
 					.requireExplicitSave(true)
 				);
 			// @formatter:on
+			return http.build();
 		}
 
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
-			// @formatter:off
-			auth
-				.inMemoryAuthentication()
-				.withUser(PasswordEncodedUser.user());
-			// @formatter:on
+		@Bean
+		UserDetailsService userDetailsService() {
+			return new InMemoryUserDetailsManager(PasswordEncodedUser.user());
 		}
 
 	}

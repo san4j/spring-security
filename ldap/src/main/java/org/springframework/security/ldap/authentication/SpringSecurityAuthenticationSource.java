@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,7 +43,7 @@ public class SpringSecurityAuthenticationSource implements AuthenticationSource 
 	private static final Log log = LogFactory.getLog(SpringSecurityAuthenticationSource.class);
 
 	private SecurityContextHolderStrategy securityContextHolderStrategy = SecurityContextHolder
-			.getContextHolderStrategy();
+		.getContextHolderStrategy();
 
 	/**
 	 * Get the principals of the logged in user, in this case the distinguished name.
@@ -57,8 +57,7 @@ public class SpringSecurityAuthenticationSource implements AuthenticationSource 
 			return "";
 		}
 		Object principal = authentication.getPrincipal();
-		if (principal instanceof LdapUserDetails) {
-			LdapUserDetails details = (LdapUserDetails) principal;
+		if (principal instanceof LdapUserDetails details) {
 			return details.getDn();
 		}
 		if (authentication instanceof AnonymousAuthenticationToken) {

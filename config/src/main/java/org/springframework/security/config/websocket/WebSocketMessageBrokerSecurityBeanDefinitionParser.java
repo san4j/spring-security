@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2018 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -159,7 +159,10 @@ public final class WebSocketMessageBrokerSecurityBeanDefinitionParser implements
 	}
 
 	private String parseAuthorization(Element element, ParserContext parserContext) {
-		boolean useAuthorizationManager = Boolean.parseBoolean(element.getAttribute(USE_AUTHORIZATION_MANAGER_ATTR));
+		boolean useAuthorizationManager = true;
+		if (StringUtils.hasText(element.getAttribute(USE_AUTHORIZATION_MANAGER_ATTR))) {
+			useAuthorizationManager = Boolean.parseBoolean(element.getAttribute(USE_AUTHORIZATION_MANAGER_ATTR));
+		}
 		if (useAuthorizationManager) {
 			return parseAuthorizationManager(element, parserContext);
 		}
@@ -173,7 +176,7 @@ public final class WebSocketMessageBrokerSecurityBeanDefinitionParser implements
 		XmlReaderContext context = parserContext.getReaderContext();
 		String mdsId = createAuthorizationManager(element, parserContext);
 		BeanDefinitionBuilder inboundChannelSecurityInterceptor = BeanDefinitionBuilder
-				.rootBeanDefinition(AuthorizationChannelInterceptor.class);
+			.rootBeanDefinition(AuthorizationChannelInterceptor.class);
 		inboundChannelSecurityInterceptor.addConstructorArgReference(mdsId);
 		String holderStrategyRef = element.getAttribute(SECURITY_CONTEXT_HOLDER_STRATEGY_REF_ATTR);
 		if (StringUtils.hasText(holderStrategyRef)) {
@@ -181,8 +184,9 @@ public final class WebSocketMessageBrokerSecurityBeanDefinitionParser implements
 					new RuntimeBeanReference(holderStrategyRef));
 		}
 		else {
-			inboundChannelSecurityInterceptor.addPropertyValue("securityContextHolderStrategy", BeanDefinitionBuilder
-					.rootBeanDefinition(SecurityContextHolderStrategyFactory.class).getBeanDefinition());
+			inboundChannelSecurityInterceptor.addPropertyValue("securityContextHolderStrategy",
+					BeanDefinitionBuilder.rootBeanDefinition(SecurityContextHolderStrategyFactory.class)
+						.getBeanDefinition());
 		}
 
 		return context.registerWithGeneratedName(inboundChannelSecurityInterceptor.getBeanDefinition());
@@ -204,7 +208,7 @@ public final class WebSocketMessageBrokerSecurityBeanDefinitionParser implements
 			String messageType = interceptMessage.getAttribute(TYPE_ATTR);
 			BeanDefinition matcher = createMatcher(matcherPattern, messageType, parserContext, interceptMessage);
 			BeanDefinitionBuilder authorizationManager = BeanDefinitionBuilder
-					.rootBeanDefinition(ExpressionBasedAuthorizationManager.class);
+				.rootBeanDefinition(ExpressionBasedAuthorizationManager.class);
 			if (StringUtils.hasText(expressionHandlerRef)) {
 				authorizationManager.addConstructorArgReference(expressionHandlerRef);
 			}
@@ -212,7 +216,7 @@ public final class WebSocketMessageBrokerSecurityBeanDefinitionParser implements
 			matcherToExpression.put(matcher, authorizationManager.getBeanDefinition());
 		}
 		BeanDefinitionBuilder mds = BeanDefinitionBuilder
-				.rootBeanDefinition(MessageMatcherDelegatingAuthorizationManagerFactory.class);
+			.rootBeanDefinition(MessageMatcherDelegatingAuthorizationManagerFactory.class);
 		mds.setFactoryMethod("createMessageMatcherDelegatingAuthorizationManager");
 		mds.addConstructorArgValue(matcherToExpression);
 		return context.registerWithGeneratedName(mds.getBeanDefinition());
@@ -234,7 +238,7 @@ public final class WebSocketMessageBrokerSecurityBeanDefinitionParser implements
 			matcherToExpression.put(matcher, accessExpression);
 		}
 		BeanDefinitionBuilder mds = BeanDefinitionBuilder
-				.rootBeanDefinition(ExpressionBasedMessageSecurityMetadataSourceFactory.class);
+			.rootBeanDefinition(ExpressionBasedMessageSecurityMetadataSourceFactory.class);
 		mds.setFactoryMethod("createExpressionMessageMetadataSource");
 		mds.addConstructorArgValue(matcherToExpression);
 		if (expressionHandlerDefined) {
@@ -243,7 +247,7 @@ public final class WebSocketMessageBrokerSecurityBeanDefinitionParser implements
 		String mdsId = context.registerWithGeneratedName(mds.getBeanDefinition());
 		ManagedList<BeanDefinition> voters = new ManagedList<>();
 		BeanDefinitionBuilder messageExpressionVoterBldr = BeanDefinitionBuilder
-				.rootBeanDefinition(MessageExpressionVoter.class);
+			.rootBeanDefinition(MessageExpressionVoter.class);
 		if (expressionHandlerDefined) {
 			messageExpressionVoterBldr.addPropertyReference("expressionHandler", expressionHandlerRef);
 		}
@@ -251,7 +255,7 @@ public final class WebSocketMessageBrokerSecurityBeanDefinitionParser implements
 		BeanDefinitionBuilder adm = BeanDefinitionBuilder.rootBeanDefinition(ConsensusBased.class);
 		adm.addConstructorArgValue(voters);
 		BeanDefinitionBuilder inboundChannelSecurityInterceptor = BeanDefinitionBuilder
-				.rootBeanDefinition(ChannelSecurityInterceptor.class);
+			.rootBeanDefinition(ChannelSecurityInterceptor.class);
 		inboundChannelSecurityInterceptor.addConstructorArgValue(registry.getBeanDefinition(mdsId));
 		inboundChannelSecurityInterceptor.addPropertyValue("accessDecisionManager", adm.getBeanDefinition());
 		return context.registerWithGeneratedName(inboundChannelSecurityInterceptor.getBeanDefinition());
@@ -276,8 +280,9 @@ public final class WebSocketMessageBrokerSecurityBeanDefinitionParser implements
 				factoryName = "createSubscribeMatcher";
 			}
 			else {
-				parserContext.getReaderContext().error("Cannot use intercept-websocket@message-type=" + messageType
-						+ " with a pattern because the type does not have a destination.", interceptMessage);
+				parserContext.getReaderContext()
+					.error("Cannot use intercept-websocket@message-type=" + messageType
+							+ " with a pattern because the type does not have a destination.", interceptMessage);
 			}
 		}
 		BeanDefinitionBuilder matcher = BeanDefinitionBuilder.rootBeanDefinition(SimpDestinationMessageMatcher.class);
@@ -299,6 +304,8 @@ public final class WebSocketMessageBrokerSecurityBeanDefinitionParser implements
 		private static final String INTERCEPTORS_PROP = "interceptors";
 
 		private static final String CUSTOM_ARG_RESOLVERS_PROP = "customArgumentResolvers";
+
+		private static final String TEMPLATE_EXPRESSION_BEAN_ID = "annotationExpressionTemplateDefaults";
 
 		private final String inboundSecurityInterceptorId;
 
@@ -322,7 +329,13 @@ public final class WebSocketMessageBrokerSecurityBeanDefinitionParser implements
 					if (current != null) {
 						argResolvers.addAll((ManagedList<?>) current.getValue());
 					}
-					argResolvers.add(new RootBeanDefinition(AuthenticationPrincipalArgumentResolver.class));
+					RootBeanDefinition beanDefinition = new RootBeanDefinition(
+							AuthenticationPrincipalArgumentResolver.class);
+					if (registry.containsBeanDefinition(TEMPLATE_EXPRESSION_BEAN_ID)) {
+						beanDefinition.getPropertyValues()
+							.add("templateDefaults", new RuntimeBeanReference(TEMPLATE_EXPRESSION_BEAN_ID));
+					}
+					argResolvers.add(beanDefinition);
 					bd.getPropertyValues().add(CUSTOM_ARG_RESOLVERS_PROP, argResolvers);
 					if (!registry.containsBeanDefinition(PATH_MATCHER_BEAN_NAME)) {
 						PropertyValue pathMatcherProp = bd.getPropertyValues().getPropertyValue("pathMatcher");
@@ -333,15 +346,15 @@ public final class WebSocketMessageBrokerSecurityBeanDefinitionParser implements
 					}
 				}
 				else if ("org.springframework.web.socket.server.support.WebSocketHttpRequestHandler"
-						.equals(beanClassName)) {
+					.equals(beanClassName)) {
 					addCsrfTokenHandshakeInterceptor(bd);
 				}
 				else if ("org.springframework.web.socket.sockjs.transport.TransportHandlingSockJsService"
-						.equals(beanClassName)) {
+					.equals(beanClassName)) {
 					addCsrfTokenHandshakeInterceptor(bd);
 				}
 				else if ("org.springframework.web.socket.sockjs.transport.handler.DefaultSockJsService"
-						.equals(beanClassName)) {
+					.equals(beanClassName)) {
 					addCsrfTokenHandshakeInterceptor(bd);
 				}
 			}
@@ -356,7 +369,7 @@ public final class WebSocketMessageBrokerSecurityBeanDefinitionParser implements
 			interceptors.add(registry.getBeanDefinition(this.inboundSecurityInterceptorId));
 			BeanDefinition inboundChannel = registry.getBeanDefinition(CLIENT_INBOUND_CHANNEL_BEAN_ID);
 			PropertyValue currentInterceptorsPv = inboundChannel.getPropertyValues()
-					.getPropertyValue(INTERCEPTORS_PROP);
+				.getPropertyValue(INTERCEPTORS_PROP);
 			if (currentInterceptorsPv != null) {
 				ManagedList<?> currentInterceptors = (ManagedList<?>) currentInterceptorsPv.getValue();
 				interceptors.addAll(currentInterceptors);
@@ -464,9 +477,9 @@ public final class WebSocketMessageBrokerSecurityBeanDefinitionParser implements
 		private static AuthorizationManager<Message<?>> createMessageMatcherDelegatingAuthorizationManager(
 				Map<MessageMatcher<?>, AuthorizationManager<MessageAuthorizationContext<?>>> beans) {
 			MessageMatcherDelegatingAuthorizationManager.Builder builder = MessageMatcherDelegatingAuthorizationManager
-					.builder();
+				.builder();
 			for (Map.Entry<MessageMatcher<?>, AuthorizationManager<MessageAuthorizationContext<?>>> entry : beans
-					.entrySet()) {
+				.entrySet()) {
 				builder.matchers(entry.getKey()).access(entry.getValue());
 			}
 			return builder.anyMessage().permitAll().build();

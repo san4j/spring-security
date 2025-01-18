@@ -44,6 +44,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.rememberme.AbstractRememberMeServicesTests;
 import org.springframework.security.web.authentication.rememberme.TokenBasedRememberMeServices;
 import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
+import org.springframework.security.web.context.RequestAttributeSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.security.web.firewall.DefaultHttpFirewall;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
@@ -188,6 +189,8 @@ public class AbstractAuthenticationProcessingFilterTests {
 		assertThat(response.getRedirectedUrl()).isEqualTo("/mycontext/logged_in.jsp");
 		assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
 		assertThat(SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString()).isEqualTo("test");
+		assertThat(request.getAttribute(RequestAttributeSecurityContextRepository.DEFAULT_REQUEST_ATTR_NAME))
+			.isNotNull();
 		// Should still have the same session
 		assertThat(request.getSession()).isEqualTo(sessionPreAuth);
 	}
@@ -215,6 +218,8 @@ public class AbstractAuthenticationProcessingFilterTests {
 		assertThat(response.getRedirectedUrl()).isEqualTo("/mycontext/logged_in.jsp");
 		assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
 		assertThat(SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString()).isEqualTo("test");
+		assertThat(request.getAttribute(RequestAttributeSecurityContextRepository.DEFAULT_REQUEST_ATTR_NAME))
+			.isNotNull();
 		// Should still have the same session
 		assertThat(request.getSession()).isEqualTo(sessionPreAuth);
 	}
@@ -244,6 +249,8 @@ public class AbstractAuthenticationProcessingFilterTests {
 		assertThat(response.getRedirectedUrl()).isEqualTo("/mycontext/logged_in.jsp");
 		assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
 		assertThat(SecurityContextHolder.getContext().getAuthentication().getPrincipal().toString()).isEqualTo("test");
+		assertThat(request.getAttribute(RequestAttributeSecurityContextRepository.DEFAULT_REQUEST_ATTR_NAME))
+			.isNotNull();
 		// Should still have the same session
 		assertThat(request.getSession()).isEqualTo(sessionPreAuth);
 	}
@@ -256,7 +263,7 @@ public class AbstractAuthenticationProcessingFilterTests {
 		filter.setAuthenticationSuccessHandler(this.successHandler);
 		filter.setFilterProcessesUrl("/login");
 		assertThatIllegalArgumentException().isThrownBy(filter::afterPropertiesSet)
-				.withMessage("authenticationManager must be specified");
+			.withMessage("authenticationManager must be specified");
 	}
 
 	@Test
@@ -266,7 +273,7 @@ public class AbstractAuthenticationProcessingFilterTests {
 		filter.setAuthenticationManager(mock(AuthenticationManager.class));
 		filter.setAuthenticationSuccessHandler(this.successHandler);
 		assertThatIllegalArgumentException().isThrownBy(() -> filter.setFilterProcessesUrl(null))
-				.withMessage("Pattern cannot be null or empty");
+			.withMessage("Pattern cannot be null or empty");
 	}
 
 	@Test
@@ -323,6 +330,8 @@ public class AbstractAuthenticationProcessingFilterTests {
 		verify(successHandler).onAuthenticationSuccess(any(HttpServletRequest.class), any(HttpServletResponse.class),
 				any(Authentication.class));
 		assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
+		assertThat(request.getAttribute(RequestAttributeSecurityContextRepository.DEFAULT_REQUEST_ATTR_NAME))
+			.isNotNull();
 	}
 
 	@Test

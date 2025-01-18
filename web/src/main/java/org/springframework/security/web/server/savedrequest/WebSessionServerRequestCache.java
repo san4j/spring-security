@@ -57,7 +57,7 @@ public class WebSessionServerRequestCache implements ServerRequestCache {
 
 	private String sessionAttrName = DEFAULT_SAVED_REQUEST_ATTR;
 
-	private ServerWebExchangeMatcher saveRequestMatcher = createDefaultRequestMacher();
+	private ServerWebExchangeMatcher saveRequestMatcher = createDefaultRequestMatcher();
 
 	private String matchingRequestParameterName;
 
@@ -73,19 +73,23 @@ public class WebSessionServerRequestCache implements ServerRequestCache {
 
 	@Override
 	public Mono<Void> saveRequest(ServerWebExchange exchange) {
-		return this.saveRequestMatcher.matches(exchange).filter(MatchResult::isMatch)
-				.flatMap((m) -> exchange.getSession()).map(WebSession::getAttributes).doOnNext((attrs) -> {
-					String requestPath = pathInApplication(exchange.getRequest());
-					attrs.put(this.sessionAttrName, requestPath);
-					logger.debug(LogMessage.format("Request added to WebSession: '%s'", requestPath));
-				}).then();
+		return this.saveRequestMatcher.matches(exchange)
+			.filter(MatchResult::isMatch)
+			.flatMap((m) -> exchange.getSession())
+			.map(WebSession::getAttributes)
+			.doOnNext((attrs) -> {
+				String requestPath = pathInApplication(exchange.getRequest());
+				attrs.put(this.sessionAttrName, requestPath);
+				logger.debug(LogMessage.format("Request added to WebSession: '%s'", requestPath));
+			})
+			.then();
 	}
 
 	@Override
 	public Mono<URI> getRedirectUri(ServerWebExchange exchange) {
 		return exchange.getSession()
-				.flatMap((session) -> Mono.justOrEmpty(session.<String>getAttribute(this.sessionAttrName)))
-				.map(this::createRedirectUri);
+			.flatMap((session) -> Mono.justOrEmpty(session.<String>getAttribute(this.sessionAttrName)))
+			.map(this::createRedirectUri);
 	}
 
 	@Override
@@ -152,7 +156,7 @@ public class WebSessionServerRequestCache implements ServerRequestCache {
 		// @formatter:on
 	}
 
-	private static ServerWebExchangeMatcher createDefaultRequestMacher() {
+	private static ServerWebExchangeMatcher createDefaultRequestMatcher() {
 		ServerWebExchangeMatcher get = ServerWebExchangeMatchers.pathMatchers(HttpMethod.GET, "/**");
 		ServerWebExchangeMatcher notFavicon = new NegatedServerWebExchangeMatcher(
 				ServerWebExchangeMatchers.pathMatchers("/favicon.*"));

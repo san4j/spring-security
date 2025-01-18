@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package org.springframework.security.web.util.matcher;
 
 import java.util.Collections;
+import java.util.Locale;
 import java.util.Map;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -66,6 +67,43 @@ public final class AntPathRequestMatcher implements RequestMatcher, RequestVaria
 	private final boolean caseSensitive;
 
 	private final UrlPathHelper urlPathHelper;
+
+	/**
+	 * Creates a matcher with the specific pattern which will match all HTTP methods in a
+	 * case-sensitive manner.
+	 * @param pattern the ant pattern to use for matching
+	 * @since 5.8
+	 */
+	public static AntPathRequestMatcher antMatcher(String pattern) {
+		Assert.hasText(pattern, "pattern cannot be empty");
+		return new AntPathRequestMatcher(pattern);
+	}
+
+	/**
+	 * Creates a matcher that will match all request with the supplied HTTP method in a
+	 * case-sensitive manner.
+	 * @param method the HTTP method. The {@code matches} method will return false if the
+	 * incoming request doesn't have the same method.
+	 * @since 5.8
+	 */
+	public static AntPathRequestMatcher antMatcher(HttpMethod method) {
+		Assert.notNull(method, "method cannot be null");
+		return new AntPathRequestMatcher(MATCH_ALL, method.name());
+	}
+
+	/**
+	 * Creates a matcher with the supplied pattern and HTTP method in a case-sensitive
+	 * manner.
+	 * @param method the HTTP method. The {@code matches} method will return false if the
+	 * incoming request doesn't have the same method.
+	 * @param pattern the ant pattern to use for matching
+	 * @since 5.8
+	 */
+	public static AntPathRequestMatcher antMatcher(HttpMethod method, String pattern) {
+		Assert.notNull(method, "method cannot be null");
+		Assert.hasText(pattern, "pattern cannot be empty");
+		return new AntPathRequestMatcher(pattern, method.name());
+	}
 
 	/**
 	 * Creates a matcher with the specific pattern which will match all HTTP methods in a
@@ -189,10 +227,9 @@ public final class AntPathRequestMatcher implements RequestMatcher, RequestVaria
 
 	@Override
 	public boolean equals(Object obj) {
-		if (!(obj instanceof AntPathRequestMatcher)) {
+		if (!(obj instanceof AntPathRequestMatcher other)) {
 			return false;
 		}
-		AntPathRequestMatcher other = (AntPathRequestMatcher) obj;
 		return this.pattern.equals(other.pattern) && this.httpMethod == other.httpMethod
 				&& this.caseSensitive == other.caseSensitive;
 	}
@@ -267,7 +304,7 @@ public final class AntPathRequestMatcher implements RequestMatcher, RequestVaria
 
 		private SubpathMatcher(String subpath, boolean caseSensitive) {
 			Assert.isTrue(!subpath.contains("*"), "subpath cannot contain \"*\"");
-			this.subpath = caseSensitive ? subpath : subpath.toLowerCase();
+			this.subpath = caseSensitive ? subpath : subpath.toLowerCase(Locale.ROOT);
 			this.length = subpath.length();
 			this.caseSensitive = caseSensitive;
 		}
@@ -275,7 +312,7 @@ public final class AntPathRequestMatcher implements RequestMatcher, RequestVaria
 		@Override
 		public boolean matches(String path) {
 			if (!this.caseSensitive) {
-				path = path.toLowerCase();
+				path = path.toLowerCase(Locale.ROOT);
 			}
 			return path.startsWith(this.subpath) && (path.length() == this.length || path.charAt(this.length) == '/');
 		}

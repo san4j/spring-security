@@ -27,7 +27,11 @@ import org.springframework.util.Assert;
  *
  * @author Rob Winch
  * @since 4.1
+ * @deprecated Use
+ * {@link CsrfTokenRepository#loadDeferredToken(HttpServletRequest, HttpServletResponse)}
+ * which returns a {@link DeferredCsrfToken}
  */
+@Deprecated
 public final class LazyCsrfTokenRepository implements CsrfTokenRepository {
 
 	/**
@@ -155,6 +159,7 @@ public final class LazyCsrfTokenRepository implements CsrfTokenRepository {
 
 	}
 
+	@SuppressWarnings("serial")
 	private static final class SaveOnAccessCsrfToken implements CsrfToken {
 
 		private transient CsrfTokenRepository tokenRepository;

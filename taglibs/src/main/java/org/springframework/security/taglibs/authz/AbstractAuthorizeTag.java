@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2022 the original author or authors.
+ * Copyright 2004-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package org.springframework.security.taglibs.authz;
 
 import java.io.IOException;
+import java.util.Locale;
 import java.util.Map;
 
 import jakarta.servlet.ServletContext;
@@ -169,12 +170,12 @@ public abstract class AbstractAuthorizeTag {
 	}
 
 	public void setMethod(String method) {
-		this.method = (method != null) ? method.toUpperCase() : null;
+		this.method = (method != null) ? method.toUpperCase(Locale.ENGLISH) : null;
 	}
 
 	private SecurityContext getContext() {
 		ApplicationContext appContext = SecurityWebApplicationContextUtils
-				.findRequiredWebApplicationContext(getServletContext());
+			.findRequiredWebApplicationContext(getServletContext());
 		String[] names = appContext.getBeanNamesForType(SecurityContextHolderStrategy.class);
 		if (names.length == 1) {
 			SecurityContextHolderStrategy strategy = appContext.getBean(SecurityContextHolderStrategy.class);
@@ -186,11 +187,11 @@ public abstract class AbstractAuthorizeTag {
 	@SuppressWarnings({ "unchecked", "rawtypes" })
 	private SecurityExpressionHandler<FilterInvocation> getExpressionHandler() throws IOException {
 		ApplicationContext appContext = SecurityWebApplicationContextUtils
-				.findRequiredWebApplicationContext(getServletContext());
+			.findRequiredWebApplicationContext(getServletContext());
 		Map<String, SecurityExpressionHandler> handlers = appContext.getBeansOfType(SecurityExpressionHandler.class);
 		for (SecurityExpressionHandler handler : handlers.values()) {
-			if (FilterInvocation.class.equals(
-					GenericTypeResolver.resolveTypeArgument(handler.getClass(), SecurityExpressionHandler.class))) {
+			if (FilterInvocation.class
+				.equals(GenericTypeResolver.resolveTypeArgument(handler.getClass(), SecurityExpressionHandler.class))) {
 				return handler;
 			}
 		}
@@ -200,14 +201,14 @@ public abstract class AbstractAuthorizeTag {
 
 	private WebInvocationPrivilegeEvaluator getPrivilegeEvaluator() throws IOException {
 		WebInvocationPrivilegeEvaluator privEvaluatorFromRequest = (WebInvocationPrivilegeEvaluator) getRequest()
-				.getAttribute(WebAttributes.WEB_INVOCATION_PRIVILEGE_EVALUATOR_ATTRIBUTE);
+			.getAttribute(WebAttributes.WEB_INVOCATION_PRIVILEGE_EVALUATOR_ATTRIBUTE);
 		if (privEvaluatorFromRequest != null) {
 			return privEvaluatorFromRequest;
 		}
 		ApplicationContext ctx = SecurityWebApplicationContextUtils
-				.findRequiredWebApplicationContext(getServletContext());
+			.findRequiredWebApplicationContext(getServletContext());
 		Map<String, WebInvocationPrivilegeEvaluator> wipes = ctx.getBeansOfType(WebInvocationPrivilegeEvaluator.class);
-		if (wipes.size() == 0) {
+		if (wipes.isEmpty()) {
 			throw new IOException(
 					"No visible WebInvocationPrivilegeEvaluator instance could be found in the application "
 							+ "context. There must be at least one in order to support the use of URL access checks in 'authorize' tags.");

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,13 @@
 
 package org.springframework.security.authorization.event;
 
+import java.io.Serial;
 import java.util.function.Supplier;
 
 import org.springframework.context.ApplicationEvent;
 import org.springframework.security.authorization.AuthorizationDecision;
+import org.springframework.security.authorization.AuthorizationResult;
 import org.springframework.security.core.Authentication;
-import org.springframework.util.Assert;
 
 /**
  * An {@link ApplicationEvent} which indicates successful authorization.
@@ -30,26 +31,38 @@ import org.springframework.util.Assert;
  * @author Josh Cummings
  * @since 5.7
  */
-public class AuthorizationGrantedEvent<T> extends ApplicationEvent {
+@SuppressWarnings("serial")
+public class AuthorizationGrantedEvent<T> extends AuthorizationEvent {
 
-	private final Supplier<Authentication> authentication;
+	@Serial
+	private static final long serialVersionUID = -8690818228055810339L;
 
-	private final AuthorizationDecision decision;
-
+	/**
+	 * @deprecated please use a constructor that takes an
+	 * {@link org.springframework.security.authorization.AuthorizationResult}
+	 */
+	@Deprecated
 	public AuthorizationGrantedEvent(Supplier<Authentication> authentication, T object,
 			AuthorizationDecision decision) {
-		super(object);
-		Assert.notNull(authentication, "authentication supplier cannot be null");
-		this.authentication = authentication;
-		this.decision = decision;
+		super(authentication, object, decision);
 	}
 
-	public Supplier<Authentication> getAuthentication() {
-		return this.authentication;
+	/**
+	 * @since 6.4
+	 */
+	public AuthorizationGrantedEvent(Supplier<Authentication> authentication, T object, AuthorizationResult result) {
+		super(authentication, object, result);
 	}
 
-	public AuthorizationDecision getAuthorizationDecision() {
-		return this.decision;
+	/**
+	 * Get the object to which access was requested
+	 * @return the object to which access was requested
+	 * @since 5.8
+	 */
+	@Override
+	@SuppressWarnings("unchecked")
+	public T getObject() {
+		return (T) getSource();
 	}
 
 }

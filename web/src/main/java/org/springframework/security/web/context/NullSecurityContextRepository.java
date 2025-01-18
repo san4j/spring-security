@@ -31,7 +31,7 @@ import org.springframework.util.Assert;
 public final class NullSecurityContextRepository implements SecurityContextRepository {
 
 	private SecurityContextHolderStrategy securityContextHolderStrategy = SecurityContextHolder
-			.getContextHolderStrategy();
+		.getContextHolderStrategy();
 
 	@Override
 	public boolean containsContext(HttpServletRequest request) {
@@ -53,9 +53,9 @@ public final class NullSecurityContextRepository implements SecurityContextRepos
 	 *
 	 * @since 5.8
 	 */
-	public void setSecurityContextHolderStrategy(SecurityContextHolderStrategy strategy) {
-		Assert.notNull(this.securityContextHolderStrategy, "securityContextHolderStrategy cannot be null");
-		this.securityContextHolderStrategy = strategy;
+	public void setSecurityContextHolderStrategy(SecurityContextHolderStrategy securityContextHolderStrategy) {
+		Assert.notNull(securityContextHolderStrategy, "securityContextHolderStrategy cannot be null");
+		this.securityContextHolderStrategy = securityContextHolderStrategy;
 	}
 
 }

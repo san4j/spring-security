@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,9 @@ import reactor.core.publisher.Mono;
 import org.springframework.aop.Pointcut;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.intercept.method.MockMethodInvocation;
+import org.springframework.security.authorization.AuthorizationDecision;
+import org.springframework.security.authorization.AuthorizationDeniedException;
+import org.springframework.security.authorization.AuthorizationResult;
 import org.springframework.security.authorization.ReactiveAuthorizationManager;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,17 +50,17 @@ public class AuthorizationManagerBeforeReactiveMethodInterceptorTests {
 	@Test
 	public void instantiateWhenPointcutNullThenException() {
 		assertThatIllegalArgumentException()
-				.isThrownBy(() -> new AuthorizationManagerBeforeReactiveMethodInterceptor(null,
-						mock(ReactiveAuthorizationManager.class)))
-				.withMessage("pointcut cannot be null");
+			.isThrownBy(() -> new AuthorizationManagerBeforeReactiveMethodInterceptor(null,
+					mock(ReactiveAuthorizationManager.class)))
+			.withMessage("pointcut cannot be null");
 
 	}
 
 	@Test
 	public void instantiateWhenAuthorizationManagerNullThenException() {
 		assertThatIllegalArgumentException()
-				.isThrownBy(() -> new AuthorizationManagerBeforeReactiveMethodInterceptor(mock(Pointcut.class), null))
-				.withMessage("authorizationManager cannot be null");
+			.isThrownBy(() -> new AuthorizationManagerBeforeReactiveMethodInterceptor(mock(Pointcut.class), null))
+			.withMessage("authorizationManager cannot be null");
 	}
 
 	@Test
@@ -67,13 +70,16 @@ public class AuthorizationManagerBeforeReactiveMethodInterceptorTests {
 		given(mockMethodInvocation.proceed()).willReturn(Mono.just("john"));
 		ReactiveAuthorizationManager<MethodInvocation> mockReactiveAuthorizationManager = mock(
 				ReactiveAuthorizationManager.class);
-		given(mockReactiveAuthorizationManager.verify(any(), eq(mockMethodInvocation))).willReturn(Mono.empty());
+		given(mockReactiveAuthorizationManager.check(any(), eq(mockMethodInvocation)))
+			.willReturn(Mono.just(new AuthorizationDecision(true)));
+		given(mockReactiveAuthorizationManager.authorize(any(), any())).willCallRealMethod();
 		AuthorizationManagerBeforeReactiveMethodInterceptor interceptor = new AuthorizationManagerBeforeReactiveMethodInterceptor(
 				Pointcut.TRUE, mockReactiveAuthorizationManager);
 		Object result = interceptor.invoke(mockMethodInvocation);
-		assertThat(result).asInstanceOf(InstanceOfAssertFactories.type(Mono.class)).extracting(Mono::block)
-				.isEqualTo("john");
-		verify(mockReactiveAuthorizationManager).verify(any(), eq(mockMethodInvocation));
+		assertThat(result).asInstanceOf(InstanceOfAssertFactories.type(Mono.class))
+			.extracting(Mono::block)
+			.isEqualTo("john");
+		verify(mockReactiveAuthorizationManager).check(any(), eq(mockMethodInvocation));
 	}
 
 	@Test
@@ -83,13 +89,17 @@ public class AuthorizationManagerBeforeReactiveMethodInterceptorTests {
 		given(mockMethodInvocation.proceed()).willReturn(Flux.just("john", "bob"));
 		ReactiveAuthorizationManager<MethodInvocation> mockReactiveAuthorizationManager = mock(
 				ReactiveAuthorizationManager.class);
-		given(mockReactiveAuthorizationManager.verify(any(), eq(mockMethodInvocation))).willReturn(Mono.empty());
+		given(mockReactiveAuthorizationManager.check(any(), eq(mockMethodInvocation)))
+			.willReturn(Mono.just(new AuthorizationDecision((true))));
+		given(mockReactiveAuthorizationManager.authorize(any(), any())).willCallRealMethod();
 		AuthorizationManagerBeforeReactiveMethodInterceptor interceptor = new AuthorizationManagerBeforeReactiveMethodInterceptor(
 				Pointcut.TRUE, mockReactiveAuthorizationManager);
 		Object result = interceptor.invoke(mockMethodInvocation);
-		assertThat(result).asInstanceOf(InstanceOfAssertFactories.type(Flux.class)).extracting(Flux::collectList)
-				.extracting(Mono::block, InstanceOfAssertFactories.list(String.class)).containsExactly("john", "bob");
-		verify(mockReactiveAuthorizationManager).verify(any(), eq(mockMethodInvocation));
+		assertThat(result).asInstanceOf(InstanceOfAssertFactories.type(Flux.class))
+			.extracting(Flux::collectList)
+			.extracting(Mono::block, InstanceOfAssertFactories.list(String.class))
+			.containsExactly("john", "bob");
+		verify(mockReactiveAuthorizationManager).check(any(), eq(mockMethodInvocation));
 	}
 
 	@Test
@@ -99,15 +109,135 @@ public class AuthorizationManagerBeforeReactiveMethodInterceptorTests {
 		given(mockMethodInvocation.proceed()).willReturn(Mono.just("john"));
 		ReactiveAuthorizationManager<MethodInvocation> mockReactiveAuthorizationManager = mock(
 				ReactiveAuthorizationManager.class);
-		given(mockReactiveAuthorizationManager.verify(any(), eq(mockMethodInvocation)))
-				.willReturn(Mono.error(new AccessDeniedException("Access Denied")));
+		given(mockReactiveAuthorizationManager.check(any(), eq(mockMethodInvocation)))
+			.willReturn(Mono.just(new AuthorizationDecision(false)));
+		given(mockReactiveAuthorizationManager.authorize(any(), any())).willCallRealMethod();
 		AuthorizationManagerBeforeReactiveMethodInterceptor interceptor = new AuthorizationManagerBeforeReactiveMethodInterceptor(
 				Pointcut.TRUE, mockReactiveAuthorizationManager);
 		Object result = interceptor.invoke(mockMethodInvocation);
-		assertThatExceptionOfType(AccessDeniedException.class).isThrownBy(() -> assertThat(result)
-				.asInstanceOf(InstanceOfAssertFactories.type(Mono.class)).extracting(Mono::block))
-				.withMessage("Access Denied");
-		verify(mockReactiveAuthorizationManager).verify(any(), eq(mockMethodInvocation));
+		assertThatExceptionOfType(AccessDeniedException.class)
+			.isThrownBy(() -> assertThat(result).asInstanceOf(InstanceOfAssertFactories.type(Mono.class))
+				.extracting(Mono::block))
+			.withMessage("Access Denied");
+		verify(mockReactiveAuthorizationManager).check(any(), eq(mockMethodInvocation));
+	}
+
+	@Test
+	public void invokeMonoWhenDeniedAndPostProcessorThenInvokePostProcessor() throws Throwable {
+		MethodInvocation mockMethodInvocation = spy(
+				new MockMethodInvocation(new Sample(), Sample.class.getDeclaredMethod("mono")));
+		given(mockMethodInvocation.proceed()).willReturn(Mono.just("john"));
+		HandlingReactiveAuthorizationManager mockReactiveAuthorizationManager = mock(
+				HandlingReactiveAuthorizationManager.class);
+		given(mockReactiveAuthorizationManager.check(any(), eq(mockMethodInvocation))).willReturn(Mono.empty());
+		given(mockReactiveAuthorizationManager.authorize(any(), any())).willCallRealMethod();
+		given(mockReactiveAuthorizationManager.handleDeniedInvocation(any(), any(AuthorizationResult.class)))
+			.willReturn("***");
+		AuthorizationManagerBeforeReactiveMethodInterceptor interceptor = new AuthorizationManagerBeforeReactiveMethodInterceptor(
+				Pointcut.TRUE, mockReactiveAuthorizationManager);
+		Object result = interceptor.invoke(mockMethodInvocation);
+		assertThat(result).asInstanceOf(InstanceOfAssertFactories.type(Mono.class))
+			.extracting(Mono::block)
+			.isEqualTo("***");
+		verify(mockReactiveAuthorizationManager).check(any(), eq(mockMethodInvocation));
+	}
+
+	@Test
+	public void invokeMonoWhenDeniedAndMonoPostProcessorThenInvokePostProcessor() throws Throwable {
+		MethodInvocation mockMethodInvocation = spy(
+				new MockMethodInvocation(new Sample(), Sample.class.getDeclaredMethod("mono")));
+		given(mockMethodInvocation.proceed()).willReturn(Mono.just("john"));
+		HandlingReactiveAuthorizationManager mockReactiveAuthorizationManager = mock(
+				HandlingReactiveAuthorizationManager.class);
+		given(mockReactiveAuthorizationManager.check(any(), eq(mockMethodInvocation))).willReturn(Mono.empty());
+		given(mockReactiveAuthorizationManager.authorize(any(), any())).willCallRealMethod();
+		given(mockReactiveAuthorizationManager.handleDeniedInvocation(any(), any(AuthorizationResult.class)))
+			.willReturn(Mono.just("***"));
+		AuthorizationManagerBeforeReactiveMethodInterceptor interceptor = new AuthorizationManagerBeforeReactiveMethodInterceptor(
+				Pointcut.TRUE, mockReactiveAuthorizationManager);
+		Object result = interceptor.invoke(mockMethodInvocation);
+		assertThat(result).asInstanceOf(InstanceOfAssertFactories.type(Mono.class))
+			.extracting(Mono::block)
+			.isEqualTo("***");
+		verify(mockReactiveAuthorizationManager).check(any(), eq(mockMethodInvocation));
+	}
+
+	@Test
+	public void invokeFluxWhenDeniedAndPostProcessorThenInvokePostProcessor() throws Throwable {
+		MethodInvocation mockMethodInvocation = spy(
+				new MockMethodInvocation(new Sample(), Sample.class.getDeclaredMethod("flux")));
+		given(mockMethodInvocation.proceed()).willReturn(Flux.just("john", "bob"));
+		HandlingReactiveAuthorizationManager mockReactiveAuthorizationManager = mock(
+				HandlingReactiveAuthorizationManager.class);
+		given(mockReactiveAuthorizationManager.check(any(), eq(mockMethodInvocation))).willReturn(Mono.empty());
+		given(mockReactiveAuthorizationManager.authorize(any(), any())).willCallRealMethod();
+		given(mockReactiveAuthorizationManager.handleDeniedInvocation(any(), any(AuthorizationResult.class)))
+			.willReturn(Mono.just("***"));
+		AuthorizationManagerBeforeReactiveMethodInterceptor interceptor = new AuthorizationManagerBeforeReactiveMethodInterceptor(
+				Pointcut.TRUE, mockReactiveAuthorizationManager);
+		Object result = interceptor.invoke(mockMethodInvocation);
+		assertThat(result).asInstanceOf(InstanceOfAssertFactories.type(Flux.class))
+			.extracting(Flux::collectList)
+			.extracting(Mono::block, InstanceOfAssertFactories.list(String.class))
+			.containsExactly("***");
+		verify(mockReactiveAuthorizationManager).check(any(), eq(mockMethodInvocation));
+	}
+
+	@Test
+	public void invokeMonoWhenEmptyDecisionThenInvokeDefaultPostProcessor() throws Throwable {
+		MethodInvocation mockMethodInvocation = spy(
+				new MockMethodInvocation(new Sample(), Sample.class.getDeclaredMethod("mono")));
+		given(mockMethodInvocation.proceed()).willReturn(Mono.just("john"));
+		ReactiveAuthorizationManager<MethodInvocation> mockReactiveAuthorizationManager = mock(
+				ReactiveAuthorizationManager.class);
+		given(mockReactiveAuthorizationManager.check(any(), eq(mockMethodInvocation))).willReturn(Mono.empty());
+		given(mockReactiveAuthorizationManager.authorize(any(), any())).willCallRealMethod();
+		AuthorizationManagerBeforeReactiveMethodInterceptor interceptor = new AuthorizationManagerBeforeReactiveMethodInterceptor(
+				Pointcut.TRUE, mockReactiveAuthorizationManager);
+		Object result = interceptor.invoke(mockMethodInvocation);
+		assertThatExceptionOfType(AuthorizationDeniedException.class)
+			.isThrownBy(() -> assertThat(result).asInstanceOf(InstanceOfAssertFactories.type(Mono.class))
+				.extracting(Mono::block))
+			.withMessage("Access Denied");
+		verify(mockReactiveAuthorizationManager).check(any(), eq(mockMethodInvocation));
+	}
+
+	@Test
+	public void invokeFluxWhenEmptyDecisionThenInvokeDefaultPostProcessor() throws Throwable {
+		MethodInvocation mockMethodInvocation = spy(
+				new MockMethodInvocation(new Sample(), Sample.class.getDeclaredMethod("flux")));
+		given(mockMethodInvocation.proceed()).willReturn(Flux.just("john", "bob"));
+		ReactiveAuthorizationManager<MethodInvocation> mockReactiveAuthorizationManager = mock(
+				ReactiveAuthorizationManager.class);
+		given(mockReactiveAuthorizationManager.check(any(), eq(mockMethodInvocation))).willReturn(Mono.empty());
+		given(mockReactiveAuthorizationManager.authorize(any(), any())).willCallRealMethod();
+		AuthorizationManagerBeforeReactiveMethodInterceptor interceptor = new AuthorizationManagerBeforeReactiveMethodInterceptor(
+				Pointcut.TRUE, mockReactiveAuthorizationManager);
+		Object result = interceptor.invoke(mockMethodInvocation);
+		assertThatExceptionOfType(AuthorizationDeniedException.class)
+			.isThrownBy(() -> assertThat(result).asInstanceOf(InstanceOfAssertFactories.type(Flux.class))
+				.extracting(Flux::blockFirst))
+			.withMessage("Access Denied");
+		verify(mockReactiveAuthorizationManager).check(any(), eq(mockMethodInvocation));
+	}
+
+	@Test
+	public void invokeWhenCustomAuthorizationDeniedExceptionThenThrows() throws Throwable {
+		MethodInvocation mockMethodInvocation = spy(
+				new MockMethodInvocation(new Sample(), Sample.class.getDeclaredMethod("flux")));
+		ReactiveAuthorizationManager<MethodInvocation> manager = mock(ReactiveAuthorizationManager.class);
+		given(manager.check(any(), any()))
+			.willThrow(new MyAuthzDeniedException("denied", new AuthorizationDecision(false)));
+		given(manager.authorize(any(), any())).willCallRealMethod();
+		AuthorizationManagerBeforeReactiveMethodInterceptor advice = new AuthorizationManagerBeforeReactiveMethodInterceptor(
+				Pointcut.TRUE, manager);
+		assertThatExceptionOfType(MyAuthzDeniedException.class)
+			.isThrownBy(() -> ((Mono<?>) advice.invoke(mockMethodInvocation)).block());
+	}
+
+	interface HandlingReactiveAuthorizationManager
+			extends ReactiveAuthorizationManager<MethodInvocation>, MethodAuthorizationDeniedHandler {
+
 	}
 
 	class Sample {
@@ -118,6 +248,14 @@ public class AuthorizationManagerBeforeReactiveMethodInterceptorTests {
 
 		Flux<String> flux() {
 			return Flux.just("john", "bob");
+		}
+
+	}
+
+	static class MyAuthzDeniedException extends AuthorizationDeniedException {
+
+		MyAuthzDeniedException(String msg, AuthorizationResult authorizationResult) {
+			super(msg, authorizationResult);
 		}
 
 	}

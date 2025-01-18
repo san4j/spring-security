@@ -34,13 +34,12 @@ import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
-import org.springframework.security.config.annotation.ObjectPostProcessor;
+import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.authentication.configuration.EnableGlobalAuthentication;
 import org.springframework.security.config.annotation.configuration.ObjectPostProcessorConfiguration;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
 import org.springframework.security.config.test.SpringTestContext;
 import org.springframework.security.config.test.SpringTestContextExtension;
 import org.springframework.security.core.Authentication;
@@ -92,19 +91,22 @@ public class AuthenticationManagerBuilderTests {
 		AuthenticationEventPublisher aep = mock(AuthenticationEventPublisher.class);
 		given(opp.postProcess(any())).willAnswer((a) -> a.getArgument(0));
 		AuthenticationManager am = new AuthenticationManagerBuilder(opp).authenticationEventPublisher(aep)
-				.inMemoryAuthentication().and().build();
-		assertThatExceptionOfType(AuthenticationException.class).isThrownBy(
-				() -> am.authenticate(UsernamePasswordAuthenticationToken.unauthenticated("user", "password")));
+			.inMemoryAuthentication()
+			.and()
+			.build();
+		assertThatExceptionOfType(AuthenticationException.class)
+			.isThrownBy(() -> am.authenticate(UsernamePasswordAuthenticationToken.unauthenticated("user", "password")));
 		verify(aep).publishAuthenticationFailure(any(), any());
 	}
 
 	@Test
 	public void getAuthenticationManagerWhenGlobalPasswordEncoderBeanThenUsed() throws Exception {
 		this.spring.register(PasswordEncoderGlobalConfig.class).autowire();
-		AuthenticationManager manager = this.spring.getContext().getBean(AuthenticationConfiguration.class)
-				.getAuthenticationManager();
+		AuthenticationManager manager = this.spring.getContext()
+			.getBean(AuthenticationConfiguration.class)
+			.getAuthenticationManager();
 		Authentication auth = manager
-				.authenticate(UsernamePasswordAuthenticationToken.unauthenticated("user", "password"));
+			.authenticate(UsernamePasswordAuthenticationToken.unauthenticated("user", "password"));
 		assertThat(auth.getName()).isEqualTo("user");
 		assertThat(auth.getAuthorities()).extracting(GrantedAuthority::getAuthority).containsOnly("ROLE_USER");
 	}
@@ -112,10 +114,11 @@ public class AuthenticationManagerBuilderTests {
 	@Test
 	public void getAuthenticationManagerWhenProtectedPasswordEncoderBeanThenUsed() throws Exception {
 		this.spring.register(PasswordEncoderGlobalConfig.class).autowire();
-		AuthenticationManager manager = this.spring.getContext().getBean(AuthenticationConfiguration.class)
-				.getAuthenticationManager();
+		AuthenticationManager manager = this.spring.getContext()
+			.getBean(AuthenticationConfiguration.class)
+			.getAuthenticationManager();
 		Authentication auth = manager
-				.authenticate(UsernamePasswordAuthenticationToken.unauthenticated("user", "password"));
+			.authenticate(UsernamePasswordAuthenticationToken.unauthenticated("user", "password"));
 		assertThat(auth.getName()).isEqualTo("user");
 		assertThat(auth.getAuthorities()).extracting(GrantedAuthority::getAuthority).containsOnly("ROLE_USER");
 	}
@@ -124,10 +127,10 @@ public class AuthenticationManagerBuilderTests {
 	public void authenticationManagerWhenMultipleProvidersThenWorks() throws Exception {
 		this.spring.register(MultiAuthenticationProvidersConfig.class).autowire();
 		SecurityMockMvcResultMatchers.AuthenticatedMatcher user = authenticated().withUsername("user")
-				.withRoles("USER");
+			.withRoles("USER");
 		this.mockMvc.perform(formLogin()).andExpect(user);
 		SecurityMockMvcResultMatchers.AuthenticatedMatcher admin = authenticated().withUsername("admin")
-				.withRoles("USER", "ADMIN");
+			.withRoles("USER", "ADMIN");
 		this.mockMvc.perform(formLogin().user("admin")).andExpect(admin);
 	}
 
@@ -162,15 +165,15 @@ public class AuthenticationManagerBuilderTests {
 	public void buildWhenUserFromProperties() throws Exception {
 		this.spring.register(UserFromPropertiesConfig.class).autowire();
 		this.mockMvc.perform(formLogin().user("joe", "joespassword"))
-				.andExpect(authenticated().withUsername("joe").withRoles("USER"));
+			.andExpect(authenticated().withUsername("joe").withRoles("USER"));
 	}
 
 	@Configuration
 	@EnableWebSecurity
-	static class MultiAuthenticationProvidersConfig extends WebSecurityConfigurerAdapter {
+	static class MultiAuthenticationProvidersConfig {
 
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+		@Autowired
+		void configure(AuthenticationManagerBuilder auth) throws Exception {
 			// @formatter:off
 			auth
 				.inMemoryAuthentication()
@@ -185,7 +188,7 @@ public class AuthenticationManagerBuilderTests {
 
 	@Configuration
 	@EnableWebSecurity
-	static class PasswordEncoderGlobalConfig extends WebSecurityConfigurerAdapter {
+	static class PasswordEncoderGlobalConfig {
 
 		@Autowired
 		void configureGlobal(AuthenticationManagerBuilder auth) throws Exception {
@@ -205,10 +208,10 @@ public class AuthenticationManagerBuilderTests {
 
 	@Configuration
 	@EnableWebSecurity
-	static class PasswordEncoderConfig extends WebSecurityConfigurerAdapter {
+	static class PasswordEncoderConfig {
 
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+		@Autowired
+		void configure(AuthenticationManagerBuilder auth) throws Exception {
 			// @formatter:off
 			auth
 				.inMemoryAuthentication()

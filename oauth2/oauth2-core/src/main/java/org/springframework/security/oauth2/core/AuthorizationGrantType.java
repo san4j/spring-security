@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,6 +32,7 @@ import org.springframework.util.Assert;
  * extensibility mechanism for defining additional grant types.
  *
  * @author Joe Grandja
+ * @author Steve Riesenberg
  * @since 5.0
  * @see <a target="_blank" href="https://tools.ietf.org/html/rfc6749#section-1.3">Section
  * 1.3 Authorization Grant</a>
@@ -61,6 +62,18 @@ public final class AuthorizationGrantType implements Serializable {
 	 */
 	public static final AuthorizationGrantType JWT_BEARER = new AuthorizationGrantType(
 			"urn:ietf:params:oauth:grant-type:jwt-bearer");
+
+	/**
+	 * @since 6.1
+	 */
+	public static final AuthorizationGrantType DEVICE_CODE = new AuthorizationGrantType(
+			"urn:ietf:params:oauth:grant-type:device_code");
+
+	/**
+	 * @since 6.3
+	 */
+	public static final AuthorizationGrantType TOKEN_EXCHANGE = new AuthorizationGrantType(
+			"urn:ietf:params:oauth:grant-type:token-exchange");
 
 	private final String value;
 
@@ -96,6 +109,11 @@ public final class AuthorizationGrantType implements Serializable {
 	@Override
 	public int hashCode() {
 		return this.getValue().hashCode();
+	}
+
+	@Override
+	public String toString() {
+		return "AuthorizationGrantType{" + "value='" + this.value + '\'' + '}';
 	}
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2019 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,13 +49,16 @@ import org.springframework.web.client.RestTemplate;
  * @see OAuth2AccessTokenResponse
  * @see <a target="_blank" href="https://tools.ietf.org/html/rfc6749#section-6">Section 6
  * Refreshing an Access Token</a>
+ * @deprecated Use {@link RestClientRefreshTokenTokenResponseClient} instead
  */
+@Deprecated(since = "6.4")
 public final class DefaultRefreshTokenTokenResponseClient
 		implements OAuth2AccessTokenResponseClient<OAuth2RefreshTokenGrantRequest> {
 
 	private static final String INVALID_TOKEN_RESPONSE_ERROR_CODE = "invalid_token_response";
 
-	private Converter<OAuth2RefreshTokenGrantRequest, RequestEntity<?>> requestEntityConverter = new OAuth2RefreshTokenGrantRequestEntityConverter();
+	private Converter<OAuth2RefreshTokenGrantRequest, RequestEntity<?>> requestEntityConverter = new ClientAuthenticationMethodValidatingRequestEntityConverter<>(
+			new OAuth2RefreshTokenGrantRequestEntityConverter());
 
 	private RestOperations restOperations;
 
@@ -75,7 +78,7 @@ public final class DefaultRefreshTokenTokenResponseClient
 		if (CollectionUtils.isEmpty(tokenResponse.getAccessToken().getScopes())
 				|| tokenResponse.getRefreshToken() == null) {
 			OAuth2AccessTokenResponse.Builder tokenResponseBuilder = OAuth2AccessTokenResponse
-					.withResponse(tokenResponse);
+				.withResponse(tokenResponse);
 			if (CollectionUtils.isEmpty(tokenResponse.getAccessToken().getScopes())) {
 				// As per spec, in Section 5.1 Successful Access Token Response
 				// https://tools.ietf.org/html/rfc6749#section-5.1

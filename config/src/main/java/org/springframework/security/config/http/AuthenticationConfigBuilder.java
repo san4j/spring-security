@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -60,6 +60,7 @@ import org.springframework.security.web.authentication.preauth.x509.SubjectDnX50
 import org.springframework.security.web.authentication.preauth.x509.X509AuthenticationFilter;
 import org.springframework.security.web.authentication.ui.DefaultLoginPageGeneratingFilter;
 import org.springframework.security.web.authentication.ui.DefaultLogoutPageGeneratingFilter;
+import org.springframework.security.web.authentication.ui.DefaultResourcesFilter;
 import org.springframework.security.web.authentication.www.BasicAuthenticationEntryPoint;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.security.web.csrf.CsrfToken;
@@ -79,6 +80,8 @@ import org.springframework.util.xml.DomUtils;
 final class AuthenticationConfigBuilder {
 
 	private final Log logger = LogFactory.getLog(getClass());
+
+	private static final boolean webMvcPresent;
 
 	private static final String ATT_REALM = "realm";
 
@@ -153,6 +156,8 @@ final class AuthenticationConfigBuilder {
 
 	private BeanDefinition logoutPageGenerationFilter;
 
+	private BeanDefinition defaultResourcesFilter;
+
 	private BeanDefinition etf;
 
 	private final BeanReference requestCache;
@@ -213,6 +218,11 @@ final class AuthenticationConfigBuilder {
 
 	private final List<BeanDefinition> csrfIgnoreRequestMatchers = new ManagedList<>();
 
+	static {
+		ClassLoader classLoader = AuthenticationConfigBuilder.class.getClassLoader();
+		webMvcPresent = ClassUtils.isPresent("org.springframework.web.servlet.DispatcherServlet", classLoader);
+	}
+
 	AuthenticationConfigBuilder(Element element, boolean forceAutoConfig, ParserContext pc,
 			SessionCreationPolicy sessionPolicy, BeanReference requestCache, BeanReference authenticationManager,
 			BeanMetadataElement authenticationFilterSecurityContextHolderStrategyRef,
@@ -230,16 +240,17 @@ final class AuthenticationConfigBuilder {
 		createAnonymousFilter(authenticationFilterSecurityContextHolderStrategyRef);
 		createRememberMeFilter(authenticationManager, authenticationFilterSecurityContextHolderStrategyRef);
 		createBasicFilter(authenticationManager, authenticationFilterSecurityContextHolderStrategyRef);
-		createBearerTokenAuthenticationFilter(authenticationManager);
+		createBearerTokenAuthenticationFilter(authenticationManager,
+				authenticationFilterSecurityContextHolderStrategyRef);
 		createFormLoginFilter(sessionStrategy, authenticationManager,
 				authenticationFilterSecurityContextHolderStrategyRef, authenticationFilterSecurityContextRepositoryRef);
 		createOAuth2ClientFilters(sessionStrategy, requestCache, authenticationManager,
-				authenticationFilterSecurityContextRepositoryRef);
+				authenticationFilterSecurityContextRepositoryRef, authenticationFilterSecurityContextHolderStrategyRef);
 		createSaml2LoginFilter(authenticationManager, authenticationFilterSecurityContextRepositoryRef);
 		createX509Filter(authenticationManager, authenticationFilterSecurityContextHolderStrategyRef);
 		createJeeFilter(authenticationManager, authenticationFilterSecurityContextHolderStrategyRef);
 		createLogoutFilter(authenticationFilterSecurityContextHolderStrategyRef);
-		createSaml2LogoutFilter();
+		createSaml2LogoutFilter(authenticationFilterSecurityContextHolderStrategyRef);
 		createLoginPageFilterIfNeeded();
 		createUserDetailsServiceFactory();
 		createExceptionTranslationFilter(authenticationFilterSecurityContextHolderStrategyRef);
@@ -291,11 +302,12 @@ final class AuthenticationConfigBuilder {
 			formFilter.getPropertyValues().addPropertyValue("allowSessionCreation", this.allowSessionCreation);
 			formFilter.getPropertyValues().addPropertyValue("authenticationManager", authManager);
 			if (authenticationFilterSecurityContextRepositoryRef != null) {
-				formFilter.getPropertyValues().addPropertyValue("securityContextRepository",
-						authenticationFilterSecurityContextRepositoryRef);
+				formFilter.getPropertyValues()
+					.addPropertyValue("securityContextRepository", authenticationFilterSecurityContextRepositoryRef);
 			}
-			formFilter.getPropertyValues().addPropertyValue("securityContextHolderStrategy",
-					authenticationFilterSecurityContextHolderStrategyRef);
+			formFilter.getPropertyValues()
+				.addPropertyValue("securityContextHolderStrategy",
+						authenticationFilterSecurityContextHolderStrategyRef);
 			// Id is required by login page filter
 			this.formFilterId = this.pc.getReaderContext().generateBeanName(formFilter);
 			this.pc.registerBeanComponent(new BeanComponentDefinition(formFilter, this.formFilterId));
@@ -304,29 +316,33 @@ final class AuthenticationConfigBuilder {
 	}
 
 	void createOAuth2ClientFilters(BeanReference sessionStrategy, BeanReference requestCache,
-			BeanReference authenticationManager, BeanReference authenticationFilterSecurityContextRepositoryRef) {
+			BeanReference authenticationManager, BeanReference authenticationFilterSecurityContextRepositoryRef,
+			BeanMetadataElement authenticationFilterSecurityContextHolderStrategy) {
 		createOAuth2LoginFilter(sessionStrategy, authenticationManager,
-				authenticationFilterSecurityContextRepositoryRef);
-		createOAuth2ClientFilter(requestCache, authenticationManager, authenticationFilterSecurityContextRepositoryRef);
+				authenticationFilterSecurityContextRepositoryRef, authenticationFilterSecurityContextHolderStrategy);
+		createOAuth2ClientFilter(requestCache, authenticationManager, authenticationFilterSecurityContextRepositoryRef,
+				authenticationFilterSecurityContextHolderStrategy);
 		registerOAuth2ClientPostProcessors();
 	}
 
 	void createOAuth2LoginFilter(BeanReference sessionStrategy, BeanReference authManager,
-			BeanReference authenticationFilterSecurityContextRepositoryRef) {
+			BeanReference authenticationFilterSecurityContextRepositoryRef,
+			BeanMetadataElement authenticationFilterSecurityContextHolderStrategy) {
 		Element oauth2LoginElt = DomUtils.getChildElementByTagName(this.httpElt, Elements.OAUTH2_LOGIN);
 		if (oauth2LoginElt == null) {
 			return;
 		}
 		this.oauth2LoginEnabled = true;
 		OAuth2LoginBeanDefinitionParser parser = new OAuth2LoginBeanDefinitionParser(this.requestCache, this.portMapper,
-				this.portResolver, sessionStrategy, this.allowSessionCreation);
+				this.portResolver, sessionStrategy, this.allowSessionCreation,
+				authenticationFilterSecurityContextHolderStrategy);
 		BeanDefinition oauth2LoginFilterBean = parser.parse(oauth2LoginElt, this.pc);
 		BeanDefinition defaultAuthorizedClientRepository = parser.getDefaultAuthorizedClientRepository();
 		registerDefaultAuthorizedClientRepositoryIfNecessary(defaultAuthorizedClientRepository);
 		oauth2LoginFilterBean.getPropertyValues().addPropertyValue("authenticationManager", authManager);
 		if (authenticationFilterSecurityContextRepositoryRef != null) {
-			oauth2LoginFilterBean.getPropertyValues().addPropertyValue("securityContextRepository",
-					authenticationFilterSecurityContextRepositoryRef);
+			oauth2LoginFilterBean.getPropertyValues()
+				.addPropertyValue("securityContextRepository", authenticationFilterSecurityContextRepositoryRef);
 		}
 
 		// retrieve the other bean result
@@ -338,7 +354,7 @@ final class AuthenticationConfigBuilder {
 		String oauth2LoginAuthProviderId = this.pc.getReaderContext().generateBeanName(oauth2LoginAuthProvider);
 		this.oauth2LoginFilterId = this.pc.getReaderContext().generateBeanName(oauth2LoginFilterBean);
 		String oauth2AuthorizationRequestRedirectFilterId = this.pc.getReaderContext()
-				.generateBeanName(this.oauth2AuthorizationRequestRedirectFilter);
+			.generateBeanName(this.oauth2AuthorizationRequestRedirectFilter);
 		this.oauth2LoginLinks = parser.getOAuth2LoginLinks();
 
 		// register the component
@@ -358,30 +374,32 @@ final class AuthenticationConfigBuilder {
 	}
 
 	void createOAuth2ClientFilter(BeanReference requestCache, BeanReference authenticationManager,
-			BeanReference authenticationFilterSecurityContextRepositoryRef) {
+			BeanReference authenticationFilterSecurityContextRepositoryRef,
+			BeanMetadataElement authenticationFilterSecurityContextHolderStrategy) {
 		Element oauth2ClientElt = DomUtils.getChildElementByTagName(this.httpElt, Elements.OAUTH2_CLIENT);
 		if (oauth2ClientElt == null) {
 			return;
 		}
 		this.oauth2ClientEnabled = true;
 		OAuth2ClientBeanDefinitionParser parser = new OAuth2ClientBeanDefinitionParser(requestCache,
-				authenticationManager, authenticationFilterSecurityContextRepositoryRef);
+				authenticationManager, authenticationFilterSecurityContextRepositoryRef,
+				authenticationFilterSecurityContextHolderStrategy);
 		parser.parse(oauth2ClientElt, this.pc);
 		BeanDefinition defaultAuthorizedClientRepository = parser.getDefaultAuthorizedClientRepository();
 		registerDefaultAuthorizedClientRepositoryIfNecessary(defaultAuthorizedClientRepository);
 		this.authorizationRequestRedirectFilter = parser.getAuthorizationRequestRedirectFilter();
 		String authorizationRequestRedirectFilterId = this.pc.getReaderContext()
-				.generateBeanName(this.authorizationRequestRedirectFilter);
+			.generateBeanName(this.authorizationRequestRedirectFilter);
 		this.pc.registerBeanComponent(new BeanComponentDefinition(this.authorizationRequestRedirectFilter,
 				authorizationRequestRedirectFilterId));
 		this.authorizationCodeGrantFilter = parser.getAuthorizationCodeGrantFilter();
 		String authorizationCodeGrantFilterId = this.pc.getReaderContext()
-				.generateBeanName(this.authorizationCodeGrantFilter);
+			.generateBeanName(this.authorizationCodeGrantFilter);
 		this.pc.registerBeanComponent(
 				new BeanComponentDefinition(this.authorizationCodeGrantFilter, authorizationCodeGrantFilterId));
 		BeanDefinition authorizationCodeAuthenticationProvider = parser.getAuthorizationCodeAuthenticationProvider();
 		String authorizationCodeAuthenticationProviderId = this.pc.getReaderContext()
-				.generateBeanName(authorizationCodeAuthenticationProvider);
+			.generateBeanName(authorizationCodeAuthenticationProvider);
 		this.pc.registerBeanComponent(new BeanComponentDefinition(authorizationCodeAuthenticationProvider,
 				authorizationCodeAuthenticationProviderId));
 		this.authorizationCodeAuthenticationProviderRef = new RuntimeBeanReference(
@@ -391,7 +409,7 @@ final class AuthenticationConfigBuilder {
 	void registerDefaultAuthorizedClientRepositoryIfNecessary(BeanDefinition defaultAuthorizedClientRepository) {
 		if (!this.defaultAuthorizedClientRepositoryRegistered && defaultAuthorizedClientRepository != null) {
 			String authorizedClientRepositoryId = this.pc.getReaderContext()
-					.generateBeanName(defaultAuthorizedClientRepository);
+				.generateBeanName(defaultAuthorizedClientRepository);
 			this.pc.registerBeanComponent(
 					new BeanComponentDefinition(defaultAuthorizedClientRepository, authorizedClientRepositoryId));
 			this.defaultAuthorizedClientRepositoryRegistered = true;
@@ -402,12 +420,14 @@ final class AuthenticationConfigBuilder {
 		if (!this.oauth2LoginEnabled && !this.oauth2ClientEnabled) {
 			return;
 		}
-		boolean webmvcPresent = ClassUtils.isPresent("org.springframework.web.servlet.DispatcherServlet",
-				getClass().getClassLoader());
-		if (webmvcPresent) {
+		if (webMvcPresent) {
 			this.pc.getReaderContext()
-					.registerWithGeneratedName(new RootBeanDefinition(OAuth2ClientWebMvcSecurityPostProcessor.class));
+				.registerWithGeneratedName(new RootBeanDefinition(OAuth2ClientWebMvcSecurityPostProcessor.class));
 		}
+		this.pc.getReaderContext()
+			.getRegistry()
+			.registerBeanDefinition(OAuth2AuthorizedClientManagerRegistrar.BEAN_NAME,
+					new RootBeanDefinition(OAuth2AuthorizedClientManagerRegistrar.class));
 	}
 
 	private void createSaml2LoginFilter(BeanReference authenticationManager,
@@ -425,7 +445,7 @@ final class AuthenticationConfigBuilder {
 
 		this.saml2AuthenticationFilterId = this.pc.getReaderContext().generateBeanName(saml2WebSsoAuthenticationFilter);
 		this.saml2AuthenticationRequestFilterId = this.pc.getReaderContext()
-				.generateBeanName(this.saml2AuthorizationRequestFilter);
+			.generateBeanName(this.saml2AuthorizationRequestFilter);
 		this.saml2AuthenticationUrlToProviderName = parser.getSaml2AuthenticationUrlToProviderName();
 
 		// register the component
@@ -437,8 +457,8 @@ final class AuthenticationConfigBuilder {
 
 	private void injectRememberMeServicesRef(RootBeanDefinition bean, String rememberMeServicesId) {
 		if (rememberMeServicesId != null) {
-			bean.getPropertyValues().addPropertyValue("rememberMeServices",
-					new RuntimeBeanReference(rememberMeServicesId));
+			bean.getPropertyValues()
+				.addPropertyValue("rememberMeServices", new RuntimeBeanReference(rememberMeServicesId));
 		}
 	}
 
@@ -476,7 +496,8 @@ final class AuthenticationConfigBuilder {
 		this.basicFilter = filterBuilder.getBeanDefinition();
 	}
 
-	void createBearerTokenAuthenticationFilter(BeanReference authManager) {
+	void createBearerTokenAuthenticationFilter(BeanReference authManager,
+			BeanMetadataElement authenticationFilterSecurityContextHolderStrategyRef) {
 		Element resourceServerElt = DomUtils.getChildElementByTagName(this.httpElt, Elements.OAUTH2_RESOURCE_SERVER);
 		if (resourceServerElt == null) {
 			// No resource server, do nothing
@@ -484,7 +505,8 @@ final class AuthenticationConfigBuilder {
 		}
 		OAuth2ResourceServerBeanDefinitionParser resourceServerBuilder = new OAuth2ResourceServerBeanDefinitionParser(
 				authManager, this.authenticationProviders, this.defaultEntryPointMappings,
-				this.defaultDeniedHandlerMappings, this.csrfIgnoreRequestMatchers);
+				this.defaultDeniedHandlerMappings, this.csrfIgnoreRequestMatchers,
+				authenticationFilterSecurityContextHolderStrategyRef);
 		this.bearerTokenAuthenticationFilter = resourceServerBuilder.parse(resourceServerElt, this.pc);
 	}
 
@@ -494,7 +516,7 @@ final class AuthenticationConfigBuilder {
 		RootBeanDefinition filter = null;
 		if (x509Elt != null) {
 			BeanDefinitionBuilder filterBuilder = BeanDefinitionBuilder
-					.rootBeanDefinition(X509AuthenticationFilter.class);
+				.rootBeanDefinition(X509AuthenticationFilter.class);
 			filterBuilder.getRawBeanDefinition().setSource(this.pc.extractSource(x509Elt));
 			filterBuilder.addPropertyValue("authenticationManager", authManager);
 			filterBuilder.addPropertyValue("securityContextHolderStrategy",
@@ -502,7 +524,7 @@ final class AuthenticationConfigBuilder {
 			String regex = x509Elt.getAttribute("subject-principal-regex");
 			if (StringUtils.hasText(regex)) {
 				BeanDefinitionBuilder extractor = BeanDefinitionBuilder
-						.rootBeanDefinition(SubjectDnX509PrincipalExtractor.class);
+					.rootBeanDefinition(SubjectDnX509PrincipalExtractor.class);
 				extractor.addPropertyValue("subjectDnRegex", regex);
 				filterBuilder.addPropertyValue("principalExtractor", extractor.getBeanDefinition());
 			}
@@ -545,13 +567,13 @@ final class AuthenticationConfigBuilder {
 		RootBeanDefinition filter = null;
 		if (jeeElt != null) {
 			BeanDefinitionBuilder filterBuilder = BeanDefinitionBuilder
-					.rootBeanDefinition(J2eePreAuthenticatedProcessingFilter.class);
+				.rootBeanDefinition(J2eePreAuthenticatedProcessingFilter.class);
 			filterBuilder.getRawBeanDefinition().setSource(this.pc.extractSource(jeeElt));
 			filterBuilder.addPropertyValue("authenticationManager", authManager);
 			filterBuilder.addPropertyValue("securityContextHolderStrategy",
 					authenticationFilterSecurityContextHolderStrategyRef);
 			BeanDefinitionBuilder adsBldr = BeanDefinitionBuilder
-					.rootBeanDefinition(J2eeBasedPreAuthenticatedWebAuthenticationDetailsSource.class);
+				.rootBeanDefinition(J2eeBasedPreAuthenticatedWebAuthenticationDetailsSource.class);
 			adsBldr.addPropertyValue("userRoles2GrantedAuthoritiesMapper",
 					new RootBeanDefinition(SimpleAttributes2GrantedAuthoritiesMapper.class));
 			String roles = jeeElt.getAttribute(ATT_MAPPABLE_ROLES);
@@ -560,8 +582,8 @@ final class AuthenticationConfigBuilder {
 			rolesBuilder.addConstructorArgValue(roles);
 			rolesBuilder.setFactoryMethod("commaDelimitedListToSet");
 			RootBeanDefinition mappableRolesRetriever = new RootBeanDefinition(SimpleMappableAttributesRetriever.class);
-			mappableRolesRetriever.getPropertyValues().addPropertyValue("mappableAttributes",
-					rolesBuilder.getBeanDefinition());
+			mappableRolesRetriever.getPropertyValues()
+				.addPropertyValue("mappableAttributes", rolesBuilder.getBeanDefinition());
 			adsBldr.addPropertyValue("mappableRolesRetriever", mappableRolesRetriever);
 			filterBuilder.addPropertyValue("authenticationDetailsSource", adsBldr.getBeanDefinition());
 			filter = (RootBeanDefinition) filterBuilder.getBeanDefinition();
@@ -595,11 +617,11 @@ final class AuthenticationConfigBuilder {
 			this.logger.info("No login page configured. The default internal one will be used. Use the '"
 					+ FormLoginBeanDefinitionParser.ATT_LOGIN_PAGE + "' attribute to set the URL of the login page.");
 			BeanDefinitionBuilder loginPageFilter = BeanDefinitionBuilder
-					.rootBeanDefinition(DefaultLoginPageGeneratingFilter.class);
+				.rootBeanDefinition(DefaultLoginPageGeneratingFilter.class);
 			loginPageFilter.addPropertyValue("resolveHiddenInputs", new CsrfTokenHiddenInputFunction());
 
 			BeanDefinitionBuilder logoutPageFilter = BeanDefinitionBuilder
-					.rootBeanDefinition(DefaultLogoutPageGeneratingFilter.class);
+				.rootBeanDefinition(DefaultLogoutPageGeneratingFilter.class);
 			logoutPageFilter.addPropertyValue("resolveHiddenInputs", new CsrfTokenHiddenInputFunction());
 			if (this.formFilterId != null) {
 				loginPageFilter.addConstructorArgReference(this.formFilterId);
@@ -616,6 +638,9 @@ final class AuthenticationConfigBuilder {
 			}
 			this.loginPageGenerationFilter = loginPageFilter.getBeanDefinition();
 			this.logoutPageGenerationFilter = logoutPageFilter.getBeanDefinition();
+			this.defaultResourcesFilter = BeanDefinitionBuilder.rootBeanDefinition(DefaultResourcesFilter.class)
+				.setFactoryMethod("css")
+				.getBeanDefinition();
 		}
 	}
 
@@ -635,13 +660,13 @@ final class AuthenticationConfigBuilder {
 		}
 	}
 
-	private void createSaml2LogoutFilter() {
+	private void createSaml2LogoutFilter(BeanMetadataElement authenticationFilterSecurityContextHolderStrategyRef) {
 		Element saml2LogoutElt = DomUtils.getChildElementByTagName(this.httpElt, Elements.SAML2_LOGOUT);
 		if (saml2LogoutElt == null) {
 			return;
 		}
 		Saml2LogoutBeanDefinitionParser parser = new Saml2LogoutBeanDefinitionParser(this.logoutHandlers,
-				this.logoutSuccessHandler);
+				this.logoutSuccessHandler, authenticationFilterSecurityContextHolderStrategyRef);
 		parser.parse(saml2LogoutElt, this.pc);
 		BeanDefinition saml2LogoutFilter = parser.getLogoutFilter();
 		BeanDefinition saml2LogoutRequestFilter = parser.getLogoutRequestFilter();
@@ -712,10 +737,10 @@ final class AuthenticationConfigBuilder {
 		this.anonymousFilter = new RootBeanDefinition(AnonymousAuthenticationFilter.class);
 		this.anonymousFilter.getConstructorArgumentValues().addIndexedArgumentValue(0, key);
 		this.anonymousFilter.getConstructorArgumentValues().addIndexedArgumentValue(1, username);
-		this.anonymousFilter.getConstructorArgumentValues().addIndexedArgumentValue(2,
-				AuthorityUtils.commaSeparatedStringToAuthorityList(grantedAuthority));
-		this.anonymousFilter.getPropertyValues().addPropertyValue("securityContextHolderStrategy",
-				authenticationFilterSecurityContextHolderStrategyRef);
+		this.anonymousFilter.getConstructorArgumentValues()
+			.addIndexedArgumentValue(2, AuthorityUtils.commaSeparatedStringToAuthorityList(grantedAuthority));
+		this.anonymousFilter.getPropertyValues()
+			.addPropertyValue("securityContextHolderStrategy", authenticationFilterSecurityContextHolderStrategyRef);
 		this.anonymousFilter.setSource(source);
 		RootBeanDefinition anonymousProviderBean = new RootBeanDefinition(AnonymousAuthenticationProvider.class);
 		anonymousProviderBean.getConstructorArgumentValues().addIndexedArgumentValue(0, key);
@@ -746,16 +771,16 @@ final class AuthenticationConfigBuilder {
 	private BeanMetadataElement createAccessDeniedHandler(Element element, ParserContext pc) {
 		Element accessDeniedElt = DomUtils.getChildElementByTagName(element, Elements.ACCESS_DENIED_HANDLER);
 		BeanDefinitionBuilder accessDeniedHandler = BeanDefinitionBuilder
-				.rootBeanDefinition(AccessDeniedHandlerImpl.class);
+			.rootBeanDefinition(AccessDeniedHandlerImpl.class);
 		if (accessDeniedElt != null) {
 			String errorPage = accessDeniedElt.getAttribute("error-page");
 			String ref = accessDeniedElt.getAttribute("ref");
 			if (StringUtils.hasText(errorPage)) {
 				if (StringUtils.hasText(ref)) {
 					pc.getReaderContext()
-							.error("The attribute " + ATT_ACCESS_DENIED_ERROR_PAGE
-									+ " cannot be used together with the 'ref' attribute within <"
-									+ Elements.ACCESS_DENIED_HANDLER + ">", pc.extractSource(accessDeniedElt));
+						.error("The attribute " + ATT_ACCESS_DENIED_ERROR_PAGE
+								+ " cannot be used together with the 'ref' attribute within <"
+								+ Elements.ACCESS_DENIED_HANDLER + ">", pc.extractSource(accessDeniedElt));
 
 				}
 				accessDeniedHandler.addPropertyValue("errorPage", errorPage);
@@ -772,10 +797,10 @@ final class AuthenticationConfigBuilder {
 			return this.defaultDeniedHandlerMappings.values().iterator().next();
 		}
 		accessDeniedHandler = BeanDefinitionBuilder
-				.rootBeanDefinition(RequestMatcherDelegatingAccessDeniedHandler.class);
+			.rootBeanDefinition(RequestMatcherDelegatingAccessDeniedHandler.class);
 		accessDeniedHandler.addConstructorArgValue(this.defaultDeniedHandlerMappings);
 		accessDeniedHandler
-				.addConstructorArgValue(BeanDefinitionBuilder.rootBeanDefinition(AccessDeniedHandlerImpl.class));
+			.addConstructorArgValue(BeanDefinitionBuilder.rootBeanDefinition(AccessDeniedHandlerImpl.class));
 		return accessDeniedHandler.getBeanDefinition();
 	}
 
@@ -791,7 +816,7 @@ final class AuthenticationConfigBuilder {
 				return this.defaultEntryPointMappings.values().iterator().next();
 			}
 			BeanDefinitionBuilder delegatingEntryPoint = BeanDefinitionBuilder
-					.rootBeanDefinition(DelegatingAuthenticationEntryPoint.class);
+				.rootBeanDefinition(DelegatingAuthenticationEntryPoint.class);
 			delegatingEntryPoint.addConstructorArgValue(this.defaultEntryPointMappings);
 			return delegatingEntryPoint.getBeanDefinition();
 		}
@@ -822,10 +847,11 @@ final class AuthenticationConfigBuilder {
 		if (this.oauth2LoginEntryPoint != null) {
 			return this.oauth2LoginEntryPoint;
 		}
-		this.pc.getReaderContext().error("No AuthenticationEntryPoint could be established. Please "
-				+ "make sure you have a login mechanism configured through the namespace (such as form-login) or "
-				+ "specify a custom AuthenticationEntryPoint with the '" + ATT_ENTRY_POINT_REF + "' attribute ",
-				this.pc.extractSource(this.httpElt));
+		this.pc.getReaderContext()
+			.error("No AuthenticationEntryPoint could be established. Please "
+					+ "make sure you have a login mechanism configured through the namespace (such as form-login) or "
+					+ "specify a custom AuthenticationEntryPoint with the '" + ATT_ENTRY_POINT_REF + "' attribute ",
+					this.pc.extractSource(this.httpElt));
 		return null;
 	}
 
@@ -869,6 +895,9 @@ final class AuthenticationConfigBuilder {
 		if (this.loginPageGenerationFilter != null) {
 			filters.add(new OrderDecorator(this.loginPageGenerationFilter, SecurityFilters.LOGIN_PAGE_FILTER));
 			filters.add(new OrderDecorator(this.logoutPageGenerationFilter, SecurityFilters.LOGOUT_PAGE_FILTER));
+		}
+		if (this.defaultResourcesFilter != null) {
+			filters.add(new OrderDecorator(this.defaultResourcesFilter, SecurityFilters.DEFAULT_RESOURCES_FILTER));
 		}
 		if (this.basicFilter != null) {
 			filters.add(new OrderDecorator(this.basicFilter, SecurityFilters.BASIC_AUTH_FILTER));

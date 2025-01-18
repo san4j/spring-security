@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2018 the original author or authors.
+ * Copyright 2002-2022 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,11 +19,13 @@ package org.springframework.security.config.http;
 import java.util.Collections;
 import java.util.Map;
 
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.ServletRegistration;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.stubbing.Answer;
 
+import org.springframework.beans.factory.BeanCreationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.parsing.BeanDefinitionParsingException;
 import org.springframework.mock.web.MockServletContext;
@@ -32,13 +34,16 @@ import org.springframework.security.config.test.SpringTestContext;
 import org.springframework.security.config.test.SpringTestContextExtension;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.context.ConfigurableWebApplicationContext;
+import org.springframework.web.util.WebUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
@@ -115,7 +120,7 @@ public class InterceptUrlConfigTests {
 		this.spring.configLocations(this.xml("PatchMethodAuthorizationManager")).autowire();
 		// @formatter:off
 		this.mvc.perform(get("/path").with(userCredentials()))
-				.andExpect(status().isOk());
+				.andExpect(status().isForbidden());
 		this.mvc.perform(patch("/path").with(userCredentials()))
 				.andExpect(status().isForbidden());
 		this.mvc.perform(patch("/path").with(adminCredentials()))
@@ -327,7 +332,7 @@ public class InterceptUrlConfigTests {
 	@Test
 	public void configureWhenUsingAntMatcherAndServletPathThenThrowsException() {
 		assertThatExceptionOfType(BeanDefinitionParsingException.class)
-				.isThrownBy(() -> this.spring.configLocations(this.xml("AntMatcherServletPath")).autowire());
+			.isThrownBy(() -> this.spring.configLocations(this.xml("AntMatcherServletPath")).autowire());
 	}
 
 	@Test
@@ -339,7 +344,7 @@ public class InterceptUrlConfigTests {
 	@Test
 	public void configureWhenUsingRegexMatcherAndServletPathThenThrowsException() {
 		assertThatExceptionOfType(BeanDefinitionParsingException.class)
-				.isThrownBy(() -> this.spring.configLocations(this.xml("RegexMatcherServletPath")).autowire());
+			.isThrownBy(() -> this.spring.configLocations(this.xml("RegexMatcherServletPath")).autowire());
 	}
 
 	@Test
@@ -351,25 +356,78 @@ public class InterceptUrlConfigTests {
 	@Test
 	public void configureWhenUsingCiRegexMatcherAndServletPathThenThrowsException() {
 		assertThatExceptionOfType(BeanDefinitionParsingException.class)
-				.isThrownBy(() -> this.spring.configLocations(this.xml("CiRegexMatcherServletPath")).autowire());
+			.isThrownBy(() -> this.spring.configLocations(this.xml("CiRegexMatcherServletPath")).autowire());
 	}
 
 	@Test
 	public void configureWhenUsingCiRegexMatcherAndServletPathAndAuthorizationManagerThenThrowsException() {
-		assertThatExceptionOfType(BeanDefinitionParsingException.class).isThrownBy(() -> this.spring
-				.configLocations(this.xml("CiRegexMatcherServletPathAuthorizationManager")).autowire());
-	}
-
-	@Test
-	public void configureWhenUsingDefaultMatcherAndServletPathThenThrowsException() {
 		assertThatExceptionOfType(BeanDefinitionParsingException.class)
-				.isThrownBy(() -> this.spring.configLocations(this.xml("DefaultMatcherServletPath")).autowire());
+			.isThrownBy(() -> this.spring.configLocations(this.xml("CiRegexMatcherServletPathAuthorizationManager"))
+				.autowire());
 	}
 
 	@Test
-	public void configureWhenUsingDefaultMatcherAndServletPathAndAuthorizationManagerThenThrowsException() {
-		assertThatExceptionOfType(BeanDefinitionParsingException.class).isThrownBy(() -> this.spring
-				.configLocations(this.xml("DefaultMatcherServletPathAuthorizationManager")).autowire());
+	public void configureWhenUsingDefaultMatcherAndServletPathThenNoException() {
+		assertThatNoException()
+			.isThrownBy(() -> this.spring.configLocations(this.xml("DefaultMatcherServletPath")).autowire());
+	}
+
+	@Test
+	public void configureWhenUsingDefaultMatcherAndNoIntrospectorBeanThenException() {
+		assertThatExceptionOfType(BeanCreationException.class)
+			.isThrownBy(() -> this.spring.configLocations(this.xml("DefaultMatcherNoIntrospectorBean")).autowire());
+	}
+
+	@Test
+	public void configureWhenUsingDefaultMatcherAndServletPathAndAuthorizationManagerThenNoException() {
+		assertThatNoException()
+			.isThrownBy(() -> this.spring.configLocations(this.xml("DefaultMatcherServletPathAuthorizationManager"))
+				.autowire());
+	}
+
+	@Test
+	public void requestWhenUsingFilterAllDispatcherTypesAndAuthorizationManagerThenAuthorizesRequestsAccordingly()
+			throws Exception {
+		this.spring.configLocations(this.xml("AuthorizationManagerFilterAllDispatcherTypes")).autowire();
+		// @formatter:off
+		this.mvc.perform(get("/path").with(userCredentials()))
+				.andExpect(status().isOk());
+		this.mvc.perform(get("/path").with(adminCredentials()))
+				.andExpect(status().isForbidden());
+		this.mvc.perform(get("/error").with((request) -> {
+			request.setAttribute(WebUtils.ERROR_REQUEST_URI_ATTRIBUTE, "/error");
+			request.setDispatcherType(DispatcherType.ERROR);
+			return request;
+		})).andExpect(status().isOk());
+		this.mvc.perform(get("/path").with((request) -> {
+			request.setAttribute(WebUtils.ERROR_REQUEST_URI_ATTRIBUTE, "/path");
+			request.setDispatcherType(DispatcherType.ERROR);
+			return request;
+		})).andExpect(status().isUnauthorized());
+		// @formatter:on
+		assertThat(this.spring.getContext().getBean(AuthorizationManager.class)).isNotNull();
+	}
+
+	@Test
+	public void requestWhenUsingFilterAllDispatcherTypesFalseThenAuthorizesRequestsAccordingly() throws Exception {
+		this.spring.configLocations(this.xml("FilterAllDispatcherTypesFalse")).autowire();
+		// @formatter:off
+		this.mvc.perform(get("/path").with(userCredentials()))
+				.andExpect(status().isOk());
+		this.mvc.perform(get("/path").with(adminCredentials()))
+				.andExpect(status().isForbidden());
+		this.mvc.perform(get("/error").with((request) -> {
+			request.setAttribute(WebUtils.ERROR_REQUEST_URI_ATTRIBUTE, "/error");
+			request.setDispatcherType(DispatcherType.ERROR);
+			return request;
+		})).andExpect(status().isOk());
+		this.mvc.perform(get("/path").with((request) -> {
+			request.setAttribute(WebUtils.ERROR_REQUEST_URI_ATTRIBUTE, "/path");
+			request.setDispatcherType(DispatcherType.ERROR);
+			return request;
+		})).andExpect(status().isOk());
+		// @formatter:on
+		assertThat(this.spring.getContext().getBean(AuthorizationManager.class)).isNotNull();
 	}
 
 	private static RequestPostProcessor adminCredentials() {
@@ -405,6 +463,16 @@ public class InterceptUrlConfigTests {
 		@RequestMapping("/path/{un}/path")
 		String path(@PathVariable("un") String name) {
 			return name;
+		}
+
+	}
+
+	@RestController
+	static class ErrorController {
+
+		@GetMapping("/error")
+		String error() {
+			return "error";
 		}
 
 	}

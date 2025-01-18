@@ -52,22 +52,24 @@ public class PostFilterAuthorizationReactiveMethodInterceptorTests {
 	@Test
 	public void setExpressionHandlerWhenNullThenException() {
 		assertThatIllegalArgumentException()
-				.isThrownBy(() -> new PostFilterAuthorizationReactiveMethodInterceptor(null))
-				.withMessage("expressionHandler cannot be null");
+			.isThrownBy(() -> new PostFilterAuthorizationReactiveMethodInterceptor(null))
+			.withMessage("expressionHandler cannot be null");
 	}
 
 	@Test
 	public void methodMatcherWhenMethodHasNotPostFilterAnnotationThenNotMatches() throws Exception {
 		PostFilterAuthorizationReactiveMethodInterceptor interceptor = new PostFilterAuthorizationReactiveMethodInterceptor();
-		assertThat(interceptor.getPointcut().getMethodMatcher()
-				.matches(NoPostFilterClass.class.getMethod("doSomething"), NoPostFilterClass.class)).isFalse();
+		assertThat(interceptor.getPointcut()
+			.getMethodMatcher()
+			.matches(NoPostFilterClass.class.getMethod("doSomething"), NoPostFilterClass.class)).isFalse();
 	}
 
 	@Test
 	public void methodMatcherWhenMethodHasPostFilterAnnotationThenMatches() throws Exception {
 		PostFilterAuthorizationReactiveMethodInterceptor interceptor = new PostFilterAuthorizationReactiveMethodInterceptor();
-		assertThat(interceptor.getPointcut().getMethodMatcher()
-				.matches(TestClass.class.getMethod("doSomethingFlux", Flux.class), TestClass.class)).isTrue();
+		assertThat(interceptor.getPointcut()
+			.getMethodMatcher()
+			.matches(TestClass.class.getMethod("doSomethingFlux", Flux.class), TestClass.class)).isTrue();
 	}
 
 	@Test
@@ -97,17 +99,10 @@ public class PostFilterAuthorizationReactiveMethodInterceptorTests {
 		};
 		PostFilterAuthorizationReactiveMethodInterceptor interceptor = new PostFilterAuthorizationReactiveMethodInterceptor();
 		Object result = interceptor.invoke(methodInvocation);
-		assertThat(result).asInstanceOf(InstanceOfAssertFactories.type(Flux.class)).extracting(Flux::collectList)
-				.extracting(Mono::block, InstanceOfAssertFactories.list(String.class)).containsOnly("john");
-	}
-
-	@Test
-	public void checkInheritedAnnotationsWhenDuplicatedThenAnnotationConfigurationException() throws Exception {
-		MockMethodInvocation methodInvocation = new MockMethodInvocation(new TestClass(), TestClass.class,
-				"inheritedAnnotations");
-		PostFilterAuthorizationReactiveMethodInterceptor interceptor = new PostFilterAuthorizationReactiveMethodInterceptor();
-		assertThatExceptionOfType(AnnotationConfigurationException.class)
-				.isThrownBy(() -> interceptor.invoke(methodInvocation));
+		assertThat(result).asInstanceOf(InstanceOfAssertFactories.type(Flux.class))
+			.extracting(Flux::collectList)
+			.extracting(Mono::block, InstanceOfAssertFactories.list(String.class))
+			.containsOnly("john");
 	}
 
 	@Test
@@ -116,7 +111,7 @@ public class PostFilterAuthorizationReactiveMethodInterceptorTests {
 				ConflictingAnnotations.class, "inheritedAnnotations");
 		PostFilterAuthorizationReactiveMethodInterceptor interceptor = new PostFilterAuthorizationReactiveMethodInterceptor();
 		assertThatExceptionOfType(AnnotationConfigurationException.class)
-				.isThrownBy(() -> interceptor.invoke(methodInvocation));
+			.isThrownBy(() -> interceptor.invoke(methodInvocation));
 	}
 
 	@PostFilter("filterObject == 'john'")
@@ -151,12 +146,10 @@ public class PostFilterAuthorizationReactiveMethodInterceptorTests {
 
 	}
 
-	public static class ConflictingAnnotations implements InterfaceAnnotationsThree {
+	public static class ConflictingAnnotations implements InterfaceAnnotationsOne, InterfaceAnnotationsTwo {
 
 		@Override
-		@PostFilter("filterObject == 'jack'")
 		public void inheritedAnnotations() {
-
 		}
 
 	}

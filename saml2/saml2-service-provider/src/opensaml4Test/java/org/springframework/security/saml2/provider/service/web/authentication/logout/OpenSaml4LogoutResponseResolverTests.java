@@ -44,6 +44,8 @@ import static org.mockito.Mockito.verify;
  */
 public class OpenSaml4LogoutResponseResolverTests {
 
+	private final OpenSamlOperations saml = new OpenSaml4Template();
+
 	RelyingPartyRegistrationResolver relyingPartyRegistrationResolver = mock(RelyingPartyRegistrationResolver.class);
 
 	@Test
@@ -54,13 +56,13 @@ public class OpenSaml4LogoutResponseResolverTests {
 		logoutResponseResolver.setParametersConsumer(parametersConsumer);
 		MockHttpServletRequest request = new MockHttpServletRequest();
 		RelyingPartyRegistration registration = TestRelyingPartyRegistrations.relyingPartyRegistration()
-				.assertingPartyDetails(
-						(party) -> party.singleLogoutServiceResponseLocation("https://ap.example.com/logout"))
-				.build();
+			.assertingPartyDetails(
+					(party) -> party.singleLogoutServiceResponseLocation("https://ap.example.com/logout"))
+			.build();
 		Authentication authentication = new TestingAuthenticationToken("user", "password");
 		LogoutRequest logoutRequest = TestOpenSamlObjects.assertingPartyLogoutRequest(registration);
 		request.setParameter(Saml2ParameterNames.SAML_REQUEST,
-				Saml2Utils.samlEncode(OpenSamlSigningUtils.serialize(logoutRequest).getBytes()));
+				Saml2Utils.samlEncode(this.saml.serialize(logoutRequest).serialize().getBytes()));
 		given(this.relyingPartyRegistrationResolver.resolve(any(), any())).willReturn(registration);
 		Saml2LogoutResponse logoutResponse = logoutResponseResolver.resolve(request, authentication);
 		assertThat(logoutResponse).isNotNull();
@@ -72,7 +74,7 @@ public class OpenSaml4LogoutResponseResolverTests {
 		OpenSaml4LogoutRequestResolver logoutRequestResolver = new OpenSaml4LogoutRequestResolver(
 				this.relyingPartyRegistrationResolver);
 		assertThatExceptionOfType(IllegalArgumentException.class)
-				.isThrownBy(() -> logoutRequestResolver.setParametersConsumer(null));
+			.isThrownBy(() -> logoutRequestResolver.setParametersConsumer(null));
 	}
 
 }

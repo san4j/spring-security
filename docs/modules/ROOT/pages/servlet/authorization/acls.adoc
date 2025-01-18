@@ -65,12 +65,12 @@ When used in the context of receiving a permission, an SID is generally called a
 The only columns are the ID and the Java class name.
 Thus, there is a single row for each unique Class for which we wish to store ACL permissions.
 
-* Finally, `ACL_ENTRY` stores the individual permissions assigned to each recipient.
-Columns include a foreign key to the ACL_OBJECT_IDENTITY, the recipient (which is a foreign key to ACL_SID), whether we audit or not, and the integer bit mask that represents the actual permission being granted or denied.
+* `ACL_OBJECT_IDENTITY` stores information for each unique domain object instance in the system.
+Columns include the ID, a foreign key to the ACL_CLASS table, a unique identifier so we know the ACL_CLASS instance for which we provide information, the parent, a foreign key to the ACL_SID table to represent the owner of the domain object instance, and whether we allow ACL entries to inherit from any parent ACL.
 We have a single row for every domain object instance for which we store ACL permissions.
 
-* Finally, ACL_ENTRY stores the individual permissions assigned to each recipient.
-Columns include a foreign key to the ACL_OBJECT_IDENTITY, the recipient (i.e. a foreign key to ACL_SID), whether we'll be auditing or not, and the integer bit mask that represents the actual permission being granted or denied.
+* Finally, `ACL_ENTRY` stores the individual permissions assigned to each recipient.
+Columns include a foreign key to the `ACL_OBJECT_IDENTITY`, the recipient (i.e. a foreign key to ACL_SID), whether we'll be auditing or not, and the integer bit mask that represents the actual permission being granted or denied.
 We have a single row for every recipient that receives a permission to work with a domain object.
 
 
@@ -143,8 +143,10 @@ We do not intend to support non-long identifiers in Spring Security's ACL module
 
 The following fragment of code shows how to create an `Acl` or modify an existing `Acl`:
 
-====
-.Java
+[tabs]
+======
+Java::
++
 [source,java,role="primary"]
 ----
 // Prepare the information we'd like in our access control entry (ACE)
@@ -165,7 +167,8 @@ acl.insertAce(acl.getEntries().length, p, sid, true);
 aclService.updateAcl(acl);
 ----
 
-.Kotlin
+Kotlin::
++
 [source,kotlin,role="secondary"]
 ----
 val oi: ObjectIdentity = ObjectIdentityImpl(Foo::class.java, 44)
@@ -184,7 +187,7 @@ aclService.createAcl(oi)
 acl!!.insertAce(acl.entries.size, p, sid, true)
 aclService.updateAcl(acl)
 ----
-====
+======
 
 In the preceding example, we retrieve the ACL associated with the `Foo` domain object with identifier number 44.
 We then add an ACE so that a principal named "`Samantha`" can "`administer`" the object.
@@ -206,4 +209,4 @@ Such classes would use `AclService` to retrieve the relevant ACL and then call `
 Alternately, you could use our `AclEntryVoter`, `AclEntryAfterInvocationProvider` or `AclEntryAfterInvocationCollectionFilteringProvider` classes.
 All of these classes provide a declarative-based approach to evaluating ACL information at runtime, freeing you from needing to write any code.
 
-See the https://github.com/spring-projects/spring-security/tree/master/samples[sample applications] to learn how to use these classes.
+See the https://github.com/spring-projects/spring-security-samples[sample applications] to learn how to use these classes.

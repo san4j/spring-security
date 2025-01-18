@@ -27,6 +27,7 @@ import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.AuthorityUtils;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.context.SecurityContextHolderStrategy;
 import org.springframework.security.oauth2.client.OAuth2AuthorizeRequest;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager;
@@ -67,6 +68,9 @@ public final class OAuth2AuthorizedClientArgumentResolver implements HandlerMeth
 	private static final Authentication ANONYMOUS_AUTHENTICATION = new AnonymousAuthenticationToken("anonymous",
 			"anonymousUser", AuthorityUtils.createAuthorityList("ROLE_ANONYMOUS"));
 
+	private SecurityContextHolderStrategy securityContextHolderStrategy = SecurityContextHolder
+		.getContextHolderStrategy();
+
 	private OAuth2AuthorizedClientManager authorizedClientManager;
 
 	/**
@@ -99,7 +103,7 @@ public final class OAuth2AuthorizedClientArgumentResolver implements HandlerMeth
 	public boolean supportsParameter(MethodParameter parameter) {
 		Class<?> parameterType = parameter.getParameterType();
 		return (OAuth2AuthorizedClient.class.isAssignableFrom(parameterType) && (AnnotatedElementUtils
-				.findMergedAnnotation(parameter.getParameter(), RegisteredOAuth2AuthorizedClient.class) != null));
+			.findMergedAnnotation(parameter.getParameter(), RegisteredOAuth2AuthorizedClient.class) != null));
 	}
 
 	@NonNull
@@ -107,12 +111,12 @@ public final class OAuth2AuthorizedClientArgumentResolver implements HandlerMeth
 	public Object resolveArgument(MethodParameter parameter, @Nullable ModelAndViewContainer mavContainer,
 			NativeWebRequest webRequest, @Nullable WebDataBinderFactory binderFactory) {
 		String clientRegistrationId = this.resolveClientRegistrationId(parameter);
-		if (StringUtils.isEmpty(clientRegistrationId)) {
+		if (!StringUtils.hasLength(clientRegistrationId)) {
 			throw new IllegalArgumentException("Unable to resolve the Client Registration Identifier. "
 					+ "It must be provided via @RegisteredOAuth2AuthorizedClient(\"client1\") or "
 					+ "@RegisteredOAuth2AuthorizedClient(registrationId = \"client1\").");
 		}
-		Authentication principal = SecurityContextHolder.getContext().getAuthentication();
+		Authentication principal = this.securityContextHolderStrategy.getContext().getAuthentication();
 		if (principal == null) {
 			principal = ANONYMOUS_AUTHENTICATION;
 		}
@@ -131,18 +135,29 @@ public final class OAuth2AuthorizedClientArgumentResolver implements HandlerMeth
 
 	private String resolveClientRegistrationId(MethodParameter parameter) {
 		RegisteredOAuth2AuthorizedClient authorizedClientAnnotation = AnnotatedElementUtils
-				.findMergedAnnotation(parameter.getParameter(), RegisteredOAuth2AuthorizedClient.class);
-		Authentication principal = SecurityContextHolder.getContext().getAuthentication();
-		if (!StringUtils.isEmpty(authorizedClientAnnotation.registrationId())) {
+			.findMergedAnnotation(parameter.getParameter(), RegisteredOAuth2AuthorizedClient.class);
+		Authentication principal = this.securityContextHolderStrategy.getContext().getAuthentication();
+		if (StringUtils.hasLength(authorizedClientAnnotation.registrationId())) {
 			return authorizedClientAnnotation.registrationId();
 		}
-		if (!StringUtils.isEmpty(authorizedClientAnnotation.value())) {
+		if (StringUtils.hasLength(authorizedClientAnnotation.value())) {
 			return authorizedClientAnnotation.value();
 		}
 		if (principal != null && OAuth2AuthenticationToken.class.isAssignableFrom(principal.getClass())) {
 			return ((OAuth2AuthenticationToken) principal).getAuthorizedClientRegistrationId();
 		}
 		return null;
+	}
+
+	/**
+	 * Sets the {@link SecurityContextHolderStrategy} to use. The default action is to use
+	 * the {@link SecurityContextHolderStrategy} stored in {@link SecurityContextHolder}.
+	 *
+	 * @since 5.8
+	 */
+	public void setSecurityContextHolderStrategy(SecurityContextHolderStrategy securityContextHolderStrategy) {
+		Assert.notNull(securityContextHolderStrategy, "securityContextHolderStrategy cannot be null");
+		this.securityContextHolderStrategy = securityContextHolderStrategy;
 	}
 
 }

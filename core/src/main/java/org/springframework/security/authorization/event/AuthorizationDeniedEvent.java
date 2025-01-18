@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import java.util.function.Supplier;
 
 import org.springframework.context.ApplicationEvent;
 import org.springframework.security.authorization.AuthorizationDecision;
+import org.springframework.security.authorization.AuthorizationResult;
 import org.springframework.security.core.Authentication;
 
 /**
@@ -29,24 +30,33 @@ import org.springframework.security.core.Authentication;
  * @author Josh Cummings
  * @since 5.7
  */
-public class AuthorizationDeniedEvent<T> extends ApplicationEvent {
+@SuppressWarnings("serial")
+public class AuthorizationDeniedEvent<T> extends AuthorizationEvent {
 
-	private final Supplier<Authentication> authentication;
-
-	private final AuthorizationDecision decision;
-
+	/**
+	 * @deprecated Please use an {@link AuthorizationResult} constructor instead
+	 */
+	@Deprecated
 	public AuthorizationDeniedEvent(Supplier<Authentication> authentication, T object, AuthorizationDecision decision) {
-		super(object);
-		this.authentication = authentication;
-		this.decision = decision;
+		super(authentication, object, decision);
 	}
 
-	public Supplier<Authentication> getAuthentication() {
-		return this.authentication;
+	/**
+	 * @since 6.4
+	 */
+	public AuthorizationDeniedEvent(Supplier<Authentication> authentication, T object, AuthorizationResult result) {
+		super(authentication, object, result);
 	}
 
-	public AuthorizationDecision getAuthorizationDecision() {
-		return this.decision;
+	/**
+	 * Get the object to which access was requested
+	 * @return the object to which access was requested
+	 * @since 5.8
+	 */
+	@Override
+	@SuppressWarnings("unchecked")
+	public T getObject() {
+		return (T) getSource();
 	}
 
 }

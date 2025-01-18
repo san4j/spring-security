@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -69,7 +69,7 @@ import org.springframework.web.filter.GenericFilterBean;
 public class ConcurrentSessionFilter extends GenericFilterBean {
 
 	private SecurityContextHolderStrategy securityContextHolderStrategy = SecurityContextHolder
-			.getContextHolderStrategy();
+		.getContextHolderStrategy();
 
 	private final SessionRegistry sessionRegistry;
 
@@ -138,10 +138,10 @@ public class ConcurrentSessionFilter extends GenericFilterBean {
 				if (info.isExpired()) {
 					// Expired - abort processing
 					this.logger.debug(LogMessage
-							.of(() -> "Requested session ID " + request.getRequestedSessionId() + " has expired."));
+						.of(() -> "Requested session ID " + request.getRequestedSessionId() + " has expired."));
 					doLogout(request, response);
 					this.sessionInformationExpiredStrategy
-							.onExpiredSessionDetected(new SessionInformationExpiredEvent(info, request, response));
+						.onExpiredSessionDetected(new SessionInformationExpiredEvent(info, request, response, chain));
 					return;
 				}
 				// Non-expired - update last request date/time
@@ -221,8 +221,9 @@ public class ConcurrentSessionFilter extends GenericFilterBean {
 		@Override
 		public void onExpiredSessionDetected(SessionInformationExpiredEvent event) throws IOException {
 			HttpServletResponse response = event.getResponse();
-			response.getWriter().print("This session has been expired (possibly due to multiple concurrent "
-					+ "logins being attempted as the same user).");
+			response.getWriter()
+				.print("This session has been expired (possibly due to multiple concurrent "
+						+ "logins being attempted as the same user).");
 			response.flushBuffer();
 		}
 

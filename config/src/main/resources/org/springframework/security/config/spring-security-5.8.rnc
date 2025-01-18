@@ -386,6 +386,9 @@ http.attlist &=
 	## Corresponds to the observeOncePerRequest property of FilterSecurityInterceptor. Defaults to "true"
 	attribute once-per-request {xsd:boolean}?
 http.attlist &=
+	## Corresponds to the shouldFilterAllDispatcherTypes property of AuthorizationFilter. Only works when use-authorization-manager=true. Defauls to "false".
+	attribute filter-all-dispatcher-types {xsd:boolean}?
+http.attlist &=
 	## Prevents the jsessionid parameter from being added to rendered URLs. Defaults to "true" (rewriting is disabled).
 	attribute disable-url-rewriting {xsd:boolean}?
 http.attlist &=
@@ -667,6 +670,9 @@ opaque-token.attlist &=
 opaque-token.attlist &=
     ## Reference to an OpaqueTokenIntrospector
     attribute introspector-ref {xsd:token}?
+opaque-token.attlist &=
+    ## Reference to an OpaqueTokenAuthenticationConverter responsible for converting successful introspection result into an Authentication.
+    attribute authentication-converter-ref {xsd:token}?
 
 openid-login =
 	## Sets up form login for authentication with an Open ID identity. NOTE: The OpenID 1.0 and 2.0 protocols have been deprecated and users are <a href="https://openid.net/specs/openid-connect-migration-1_0.html">encouraged to migrate</a> to <a href="https://openid.net/connect/">OpenID Connect</a>, which is supported by <code>spring-security-oauth2</code>.
@@ -1149,11 +1155,8 @@ csrf-options.attlist &=
 	## The CsrfTokenRepository to use. The default is HttpSessionCsrfTokenRepository wrapped by LazyCsrfTokenRepository.
 	attribute token-repository-ref { xsd:token }?
 csrf-options.attlist &=
-	## The CsrfTokenRequestAttributeHandler to use. The default is CsrfTokenRequestProcessor.
-	attribute request-attribute-handler-ref { xsd:token }?
-csrf-options.attlist &=
-	## The CsrfTokenRequestResolver to use. The default is CsrfTokenRequestProcessor.
-	attribute request-resolver-ref { xsd:token }?
+	## The CsrfTokenRequestHandler to use. The default is CsrfTokenRequestAttributeHandler.
+	attribute request-handler-ref { xsd:token }?
 
 headers =
 ## Element for configuration of the HeaderWritersFilter. Enables easy setting for the X-Frame-Options, X-XSS-Protection and X-Content-Type-Options headers.
@@ -1193,6 +1196,7 @@ cors-options.attlist &=
 	attribute configuration-source-ref {xsd:token}?
 
 hpkp =
+	## Deprecated. The HPKP header no longer works in modern browsers, see <a href="https://owasp.org/www-community/controls/Certificate_and_Public_Key_Pinning">Certificate and Public Key Pinning</a> for more context
 	## Adds support for HTTP Public Key Pinning (HPKP).
 	element hpkp {hpkp.pins,hpkp.attlist}
 hpkp.pins =
@@ -1298,6 +1302,9 @@ xss-protection.attlist &=
 xss-protection.attlist &=
 	## Add mode=block to the header or not, default is on.
 	attribute block {xsd:boolean}?
+xss-protection.attlist &=
+	## Specify the value for the X-Xss-Protection header. When set, overrides both enabled and block attributes.
+	attribute header-value {"0"|"1"|"1; mode=block"}?
 
 content-type-options =
 	## Add a X-Content-Type-Options header to the resopnse. Value is always 'nosniff'.

@@ -22,6 +22,7 @@ import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Answers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -50,7 +51,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 @ExtendWith(MockitoExtension.class)
 public class DefaultMessageSecurityExpressionHandlerTests {
 
-	@Mock
+	@Mock(answer = Answers.CALLS_REAL_METHODS)
 	AuthenticationTrustResolver trustResolver;
 
 	@Mock
@@ -119,8 +120,9 @@ public class DefaultMessageSecurityExpressionHandlerTests {
 		EvaluationContext context = this.handler.createEvaluationContext(mockAuthenticationSupplier, this.message);
 		verifyNoInteractions(mockAuthenticationSupplier);
 		assertThat(context.getRootObject()).extracting(TypedValue::getValue)
-				.asInstanceOf(InstanceOfAssertFactories.type(MessageSecurityExpressionRoot.class))
-				.extracting(SecurityExpressionRoot::getAuthentication).isEqualTo(this.authentication);
+			.asInstanceOf(InstanceOfAssertFactories.type(MessageSecurityExpressionRoot.class))
+			.extracting(SecurityExpressionRoot::getAuthentication)
+			.isEqualTo(this.authentication);
 		verify(mockAuthenticationSupplier).get();
 	}
 

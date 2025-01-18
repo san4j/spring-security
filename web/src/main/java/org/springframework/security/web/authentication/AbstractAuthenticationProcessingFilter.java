@@ -43,7 +43,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.context.SecurityContextHolderStrategy;
 import org.springframework.security.web.authentication.session.NullAuthenticatedSessionStrategy;
 import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
-import org.springframework.security.web.context.NullSecurityContextRepository;
+import org.springframework.security.web.context.RequestAttributeSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
@@ -116,7 +116,7 @@ public abstract class AbstractAuthenticationProcessingFilter extends GenericFilt
 		implements ApplicationEventPublisherAware, MessageSourceAware {
 
 	private SecurityContextHolderStrategy securityContextHolderStrategy = SecurityContextHolder
-			.getContextHolderStrategy();
+		.getContextHolderStrategy();
 
 	protected ApplicationEventPublisher eventPublisher;
 
@@ -140,7 +140,7 @@ public abstract class AbstractAuthenticationProcessingFilter extends GenericFilt
 
 	private AuthenticationFailureHandler failureHandler = new SimpleUrlAuthenticationFailureHandler();
 
-	private SecurityContextRepository securityContextRepository = new NullSecurityContextRepository();
+	private SecurityContextRepository securityContextRepository = new RequestAttributeSecurityContextRepository();
 
 	/**
 	 * @param defaultFilterProcessesUrl the default value for <tt>filterProcessesUrl</tt>.
@@ -268,7 +268,7 @@ public abstract class AbstractAuthenticationProcessingFilter extends GenericFilt
 		}
 		if (this.logger.isTraceEnabled()) {
 			this.logger
-					.trace(LogMessage.format("Did not match request to %s", this.requiresAuthenticationRequestMatcher));
+				.trace(LogMessage.format("Did not match request to %s", this.requiresAuthenticationRequestMatcher));
 		}
 		return false;
 	}
@@ -338,7 +338,7 @@ public abstract class AbstractAuthenticationProcessingFilter extends GenericFilt
 	 * <ol>
 	 * <li>Clears the {@link SecurityContextHolder}</li>
 	 * <li>Stores the exception in the session (if it exists or
-	 * <tt>allowSesssionCreation</tt> is set to <tt>true</tt>)</li>
+	 * <tt>allowSessionCreation</tt> is set to <tt>true</tt>)</li>
 	 * <li>Informs the configured <tt>RememberMeServices</tt> of the failed login</li>
 	 * <li>Delegates additional behaviour to the
 	 * {@link AuthenticationFailureHandler}.</li>

@@ -43,7 +43,7 @@ public class LdapUserDetailsServiceTests {
 	@Test
 	public void rejectsNullSearchObject() {
 		assertThatIllegalArgumentException()
-				.isThrownBy(() -> new LdapUserDetailsService(null, new NullLdapAuthoritiesPopulator()));
+			.isThrownBy(() -> new LdapUserDetailsService(null, new NullLdapAuthoritiesPopulator()));
 	}
 
 	@Test
@@ -60,7 +60,7 @@ public class LdapUserDetailsServiceTests {
 		UserDetails user = service.loadUserByUsername("doesntmatterwegetjoeanyway");
 		Set<String> authorities = AuthorityUtils.authorityListToSet(user.getAuthorities());
 		assertThat(authorities).hasSize(1);
-		assertThat(authorities.contains("ROLE_FROM_POPULATOR")).isTrue();
+		assertThat(authorities).contains("ROLE_FROM_POPULATOR");
 	}
 
 	@Test

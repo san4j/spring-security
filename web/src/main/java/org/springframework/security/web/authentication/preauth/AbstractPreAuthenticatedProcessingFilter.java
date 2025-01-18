@@ -41,7 +41,7 @@ import org.springframework.security.web.WebAttributes;
 import org.springframework.security.web.authentication.AuthenticationFailureHandler;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
-import org.springframework.security.web.context.NullSecurityContextRepository;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.util.Assert;
@@ -90,7 +90,7 @@ public abstract class AbstractPreAuthenticatedProcessingFilter extends GenericFi
 		implements ApplicationEventPublisherAware {
 
 	private SecurityContextHolderStrategy securityContextHolderStrategy = SecurityContextHolder
-			.getContextHolderStrategy();
+		.getContextHolderStrategy();
 
 	private ApplicationEventPublisher eventPublisher = null;
 
@@ -110,7 +110,7 @@ public abstract class AbstractPreAuthenticatedProcessingFilter extends GenericFi
 
 	private RequestMatcher requiresAuthenticationRequestMatcher = new PreAuthenticatedProcessingRequestMatcher();
 
-	private SecurityContextRepository securityContextRepository = new NullSecurityContextRepository();
+	private SecurityContextRepository securityContextRepository = new HttpSessionSecurityContextRepository();
 
 	/**
 	 * Check whether all required properties have been set.
@@ -136,8 +136,8 @@ public abstract class AbstractPreAuthenticatedProcessingFilter extends GenericFi
 			throws IOException, ServletException {
 		if (this.requiresAuthenticationRequestMatcher.matches((HttpServletRequest) request)) {
 			if (logger.isDebugEnabled()) {
-				logger.debug(LogMessage.of(
-						() -> "Authenticating " + this.securityContextHolderStrategy.getContext().getAuthentication()));
+				logger.debug(LogMessage
+					.of(() -> "Authenticating " + this.securityContextHolderStrategy.getContext().getAuthentication()));
 			}
 			doAuthenticate((HttpServletRequest) request, (HttpServletResponse) response);
 		}
@@ -370,7 +370,8 @@ public abstract class AbstractPreAuthenticatedProcessingFilter extends GenericFi
 		@Override
 		public boolean matches(HttpServletRequest request) {
 			Authentication currentUser = AbstractPreAuthenticatedProcessingFilter.this.securityContextHolderStrategy
-					.getContext().getAuthentication();
+				.getContext()
+				.getAuthentication();
 			if (currentUser == null) {
 				return true;
 			}
@@ -381,7 +382,7 @@ public abstract class AbstractPreAuthenticatedProcessingFilter extends GenericFi
 				return false;
 			}
 			AbstractPreAuthenticatedProcessingFilter.this.logger
-					.debug("Pre-authenticated principal has changed and will be reauthenticated");
+				.debug("Pre-authenticated principal has changed and will be reauthenticated");
 			if (AbstractPreAuthenticatedProcessingFilter.this.invalidateSessionOnPrincipalChange) {
 				AbstractPreAuthenticatedProcessingFilter.this.securityContextHolderStrategy.clearContext();
 				HttpSession session = request.getSession(false);

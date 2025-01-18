@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -70,7 +70,8 @@ public class Saml2RelyingPartyInitiatedLogoutSuccessHandlerTests {
 		Authentication authentication = authentication(registration);
 		SecurityContextHolder.getContext().setAuthentication(authentication);
 		Saml2LogoutRequest logoutRequest = Saml2LogoutRequest.withRelyingPartyRegistration(registration)
-				.samlRequest("request").build();
+			.samlRequest("request")
+			.build();
 		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/saml2/logout");
 		request.setServletPath("/saml2/logout");
 		MockHttpServletResponse response = new MockHttpServletResponse();
@@ -84,11 +85,13 @@ public class Saml2RelyingPartyInitiatedLogoutSuccessHandlerTests {
 	@Test
 	public void onLogoutSuccessWhenPostThenPostsToAssertingParty() throws Exception {
 		RelyingPartyRegistration registration = TestRelyingPartyRegistrations.full()
-				.assertingPartyDetails((party) -> party.singleLogoutServiceBinding(Saml2MessageBinding.POST)).build();
+			.assertingPartyDetails((party) -> party.singleLogoutServiceBinding(Saml2MessageBinding.POST))
+			.build();
 		Authentication authentication = authentication(registration);
 		SecurityContextHolder.getContext().setAuthentication(authentication);
 		Saml2LogoutRequest logoutRequest = Saml2LogoutRequest.withRelyingPartyRegistration(registration)
-				.samlRequest("request").build();
+			.samlRequest("request")
+			.build();
 		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/saml2/logout");
 		request.setServletPath("/saml2/logout");
 		MockHttpServletResponse response = new MockHttpServletResponse();
@@ -98,8 +101,8 @@ public class Saml2RelyingPartyInitiatedLogoutSuccessHandlerTests {
 		assertThat(content).contains(Saml2ParameterNames.SAML_REQUEST);
 		assertThat(content).contains(registration.getAssertingPartyDetails().getSingleLogoutServiceLocation());
 		assertThat(content).contains(
-				"<meta http-equiv=\"Content-Security-Policy\" content=\"script-src 'sha256-t+jmhLjs1ocvgaHBJsFcgznRk68d37TLtbI3NE9h7EU='\">");
-		assertThat(content).contains("<script>window.onload = () => document.forms[0].submit();</script>");
+				"<meta http-equiv=\"Content-Security-Policy\" content=\"script-src 'sha256-oZhLbc2kO8b8oaYLrUc7uye1MgVKMyLtPqWR4WtKF+c='\">");
+		assertThat(content).contains("<script>window.onload = function() { document.forms[0].submit(); }</script>");
 	}
 
 	private Saml2Authentication authentication(RelyingPartyRegistration registration) {

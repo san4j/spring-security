@@ -55,7 +55,7 @@ public class SessionManagementFilter extends GenericFilterBean {
 	static final String FILTER_APPLIED = "__spring_security_session_mgmt_filter_applied";
 
 	private SecurityContextHolderStrategy securityContextHolderStrategy = SecurityContextHolder
-			.getContextHolderStrategy();
+		.getContextHolderStrategy();
 
 	private final SecurityContextRepository securityContextRepository;
 
@@ -94,7 +94,7 @@ public class SessionManagementFilter extends GenericFilterBean {
 		request.setAttribute(FILTER_APPLIED, Boolean.TRUE);
 		if (!this.securityContextRepository.containsContext(request)) {
 			Authentication authentication = this.securityContextHolderStrategy.getContext().getAuthentication();
-			if (authentication != null && !this.trustResolver.isAnonymous(authentication)) {
+			if (this.trustResolver.isAuthenticated(authentication)) {
 				// The user has been authenticated during the current request, so call the
 				// session strategy
 				try {

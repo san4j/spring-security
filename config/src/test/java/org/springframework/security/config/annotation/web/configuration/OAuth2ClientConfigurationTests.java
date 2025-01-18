@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2020 the original author or authors.
+ * Copyright 2002-2022 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,6 +42,7 @@ import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepo
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.security.oauth2.core.TestOAuth2AccessTokens;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AccessTokenResponse;
+import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -82,14 +83,16 @@ public class OAuth2ClientConfigurationTests {
 		TestingAuthenticationToken authentication = new TestingAuthenticationToken(principalName, "password");
 		ClientRegistrationRepository clientRegistrationRepository = mock(ClientRegistrationRepository.class);
 		ClientRegistration clientRegistration = TestClientRegistrations.clientRegistration()
-				.registrationId(clientRegistrationId).build();
+			.registrationId(clientRegistrationId)
+			.build();
 		given(clientRegistrationRepository.findByRegistrationId(eq(clientRegistrationId)))
-				.willReturn(clientRegistration);
+			.willReturn(clientRegistration);
 		OAuth2AuthorizedClientRepository authorizedClientRepository = mock(OAuth2AuthorizedClientRepository.class);
 		OAuth2AuthorizedClient authorizedClient = mock(OAuth2AuthorizedClient.class);
 		given(authorizedClient.getClientRegistration()).willReturn(clientRegistration);
 		given(authorizedClientRepository.loadAuthorizedClient(eq(clientRegistrationId), eq(authentication),
-				any(HttpServletRequest.class))).willReturn(authorizedClient);
+				any(HttpServletRequest.class)))
+			.willReturn(authorizedClient);
 		OAuth2AccessToken accessToken = mock(OAuth2AccessToken.class);
 		given(authorizedClient.getAccessToken()).willReturn(accessToken);
 		OAuth2AccessTokenResponseClient accessTokenResponseClient = mock(OAuth2AccessTokenResponseClient.class);
@@ -115,7 +118,8 @@ public class OAuth2ClientConfigurationTests {
 		OAuth2AuthorizedClientRepository authorizedClientRepository = mock(OAuth2AuthorizedClientRepository.class);
 		OAuth2AccessTokenResponseClient accessTokenResponseClient = mock(OAuth2AccessTokenResponseClient.class);
 		ClientRegistration clientRegistration = TestClientRegistrations.clientCredentials()
-				.registrationId(clientRegistrationId).build();
+			.registrationId(clientRegistrationId)
+			.build();
 		given(clientRegistrationRepository.findByRegistrationId(clientRegistrationId)).willReturn(clientRegistration);
 		// @formatter:off
 		OAuth2AccessTokenResponse accessTokenResponse = OAuth2AccessTokenResponse
@@ -125,13 +129,13 @@ public class OAuth2ClientConfigurationTests {
 				.build();
 		// @formatter:on
 		given(accessTokenResponseClient.getTokenResponse(any(OAuth2ClientCredentialsGrantRequest.class)))
-				.willReturn(accessTokenResponse);
+			.willReturn(accessTokenResponse);
 		OAuth2AuthorizedClientArgumentResolverConfig.CLIENT_REGISTRATION_REPOSITORY = clientRegistrationRepository;
 		OAuth2AuthorizedClientArgumentResolverConfig.AUTHORIZED_CLIENT_REPOSITORY = authorizedClientRepository;
 		OAuth2AuthorizedClientArgumentResolverConfig.ACCESS_TOKEN_RESPONSE_CLIENT = accessTokenResponseClient;
 		this.spring.register(OAuth2AuthorizedClientArgumentResolverConfig.class).autowire();
 		MockHttpServletRequestBuilder authenticatedRequest = get("/authorized-client")
-				.with(authentication(authentication));
+			.with(authentication(authentication));
 		// @formatter:off
 		this.mockMvc.perform(authenticatedRequest)
 				.andExpect(status().isOk())
@@ -143,20 +147,22 @@ public class OAuth2ClientConfigurationTests {
 	// gh-5321
 	@Test
 	public void loadContextWhenOAuth2AuthorizedClientRepositoryRegisteredTwiceThenThrowNoUniqueBeanDefinitionException() {
-		assertThatExceptionOfType(BeanCreationException.class).isThrownBy(
-				() -> this.spring.register(OAuth2AuthorizedClientRepositoryRegisteredTwiceConfig.class).autowire())
-				.withRootCauseInstanceOf(NoUniqueBeanDefinitionException.class).withMessageContaining(
-						"Expected single matching bean of type '" + OAuth2AuthorizedClientRepository.class.getName()
-								+ "' but found 2: authorizedClientRepository1,authorizedClientRepository2");
+		assertThatExceptionOfType(BeanCreationException.class)
+			.isThrownBy(
+					() -> this.spring.register(OAuth2AuthorizedClientRepositoryRegisteredTwiceConfig.class).autowire())
+			.withRootCauseInstanceOf(NoUniqueBeanDefinitionException.class)
+			.withMessageContaining(
+					"Expected single matching bean of type '" + OAuth2AuthorizedClientRepository.class.getName()
+							+ "' but found 2: authorizedClientRepository1,authorizedClientRepository2");
 	}
 
 	@Test
 	public void loadContextWhenClientRegistrationRepositoryNotRegisteredThenThrowNoSuchBeanDefinitionException() {
 		assertThatExceptionOfType(Exception.class)
-				.isThrownBy(
-						() -> this.spring.register(ClientRegistrationRepositoryNotRegisteredConfig.class).autowire())
-				.withRootCauseInstanceOf(NoSuchBeanDefinitionException.class).withMessageContaining(
-						"No qualifying bean of type '" + ClientRegistrationRepository.class.getName() + "' available");
+			.isThrownBy(() -> this.spring.register(ClientRegistrationRepositoryNotRegisteredConfig.class).autowire())
+			.withRootCauseInstanceOf(NoSuchBeanDefinitionException.class)
+			.withMessageContaining(
+					"No qualifying bean of type '" + ClientRegistrationRepository.class.getName() + "' available");
 	}
 
 	@Test
@@ -174,9 +180,10 @@ public class OAuth2ClientConfigurationTests {
 	@Test
 	public void loadContextWhenAccessTokenResponseClientRegisteredTwiceThenThrowNoUniqueBeanDefinitionException() {
 		// @formatter:off
-		assertThatExceptionOfType(Exception.class)
+		assertThatExceptionOfType(BeanCreationException.class)
 				.isThrownBy(() -> this.spring.register(AccessTokenResponseClientRegisteredTwiceConfig.class).autowire())
-				.withRootCauseInstanceOf(NoUniqueBeanDefinitionException.class)
+				.havingRootCause()
+				.isInstanceOf(NoUniqueBeanDefinitionException.class)
 				.withMessageContaining(
 						"expected single matching bean but found 2: accessTokenResponseClient1,accessTokenResponseClient2");
 		// @formatter:on
@@ -192,7 +199,8 @@ public class OAuth2ClientConfigurationTests {
 		OAuth2AuthorizedClientRepository authorizedClientRepository = mock(OAuth2AuthorizedClientRepository.class);
 		OAuth2AuthorizedClientManager authorizedClientManager = mock(OAuth2AuthorizedClientManager.class);
 		ClientRegistration clientRegistration = TestClientRegistrations.clientRegistration()
-				.registrationId(clientRegistrationId).build();
+			.registrationId(clientRegistrationId)
+			.build();
 		OAuth2AuthorizedClient authorizedClient = new OAuth2AuthorizedClient(clientRegistration, principalName,
 				TestOAuth2AccessTokens.noScopes());
 		given(authorizedClientManager.authorize(any())).willReturn(authorizedClient);
@@ -201,7 +209,7 @@ public class OAuth2ClientConfigurationTests {
 		OAuth2AuthorizedClientManagerRegisteredConfig.AUTHORIZED_CLIENT_MANAGER = authorizedClientManager;
 		this.spring.register(OAuth2AuthorizedClientManagerRegisteredConfig.class).autowire();
 		MockHttpServletRequestBuilder authenticatedRequest = get("/authorized-client")
-				.with(authentication(authentication));
+			.with(authentication(authentication));
 		// @formatter:off
 		this.mockMvc
 				.perform(authenticatedRequest)
@@ -216,14 +224,15 @@ public class OAuth2ClientConfigurationTests {
 	@Configuration
 	@EnableWebMvc
 	@EnableWebSecurity
-	static class OAuth2AuthorizedClientArgumentResolverConfig extends WebSecurityConfigurerAdapter {
+	static class OAuth2AuthorizedClientArgumentResolverConfig {
 
 		static ClientRegistrationRepository CLIENT_REGISTRATION_REPOSITORY;
 		static OAuth2AuthorizedClientRepository AUTHORIZED_CLIENT_REPOSITORY;
 		static OAuth2AccessTokenResponseClient<OAuth2ClientCredentialsGrantRequest> ACCESS_TOKEN_RESPONSE_CLIENT;
 
-		@Override
-		protected void configure(HttpSecurity http) {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+			return http.build();
 		}
 
 		@Bean
@@ -257,16 +266,17 @@ public class OAuth2ClientConfigurationTests {
 	@Configuration
 	@EnableWebMvc
 	@EnableWebSecurity
-	static class OAuth2AuthorizedClientRepositoryRegisteredTwiceConfig extends WebSecurityConfigurerAdapter {
+	static class OAuth2AuthorizedClientRepositoryRegisteredTwiceConfig {
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.authorizeRequests()
 					.anyRequest().authenticated()
 					.and()
 				.oauth2Login();
+			return http.build();
 			// @formatter:on
 		}
 
@@ -295,16 +305,17 @@ public class OAuth2ClientConfigurationTests {
 	@Configuration
 	@EnableWebMvc
 	@EnableWebSecurity
-	static class ClientRegistrationRepositoryNotRegisteredConfig extends WebSecurityConfigurerAdapter {
+	static class ClientRegistrationRepositoryNotRegisteredConfig {
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.authorizeRequests()
 					.anyRequest().authenticated()
 					.and()
 				.oauth2Login();
+			return http.build();
 			// @formatter:on
 		}
 
@@ -313,16 +324,17 @@ public class OAuth2ClientConfigurationTests {
 	@Configuration
 	@EnableWebMvc
 	@EnableWebSecurity
-	static class ClientRegistrationRepositoryRegisteredTwiceConfig extends WebSecurityConfigurerAdapter {
+	static class ClientRegistrationRepositoryRegisteredTwiceConfig {
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.authorizeRequests()
 					.anyRequest().authenticated()
 					.and()
 				.oauth2Login();
+			return http.build();
 			// @formatter:on
 		}
 
@@ -351,16 +363,17 @@ public class OAuth2ClientConfigurationTests {
 	@Configuration
 	@EnableWebMvc
 	@EnableWebSecurity
-	static class AccessTokenResponseClientRegisteredTwiceConfig extends WebSecurityConfigurerAdapter {
+	static class AccessTokenResponseClientRegisteredTwiceConfig {
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.authorizeRequests()
 					.anyRequest().authenticated()
 					.and()
 				.oauth2Login();
+			return http.build();
 			// @formatter:on
 		}
 
@@ -389,14 +402,15 @@ public class OAuth2ClientConfigurationTests {
 	@Configuration
 	@EnableWebMvc
 	@EnableWebSecurity
-	static class OAuth2AuthorizedClientManagerRegisteredConfig extends WebSecurityConfigurerAdapter {
+	static class OAuth2AuthorizedClientManagerRegisteredConfig {
 
 		static ClientRegistrationRepository CLIENT_REGISTRATION_REPOSITORY;
 		static OAuth2AuthorizedClientRepository AUTHORIZED_CLIENT_REPOSITORY;
 		static OAuth2AuthorizedClientManager AUTHORIZED_CLIENT_MANAGER;
 
-		@Override
-		protected void configure(HttpSecurity http) {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+			return http.build();
 		}
 
 		@Bean

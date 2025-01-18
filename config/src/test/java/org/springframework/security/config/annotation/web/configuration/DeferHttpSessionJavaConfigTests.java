@@ -32,8 +32,6 @@ import org.springframework.security.config.test.SpringTestContext;
 import org.springframework.security.config.test.SpringTestContextExtension;
 import org.springframework.security.web.DefaultSecurityFilterChain;
 import org.springframework.security.web.FilterChainProxy;
-import org.springframework.security.web.csrf.HttpSessionCsrfTokenRepository;
-import org.springframework.security.web.csrf.LazyCsrfTokenRepository;
 
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.never;
@@ -78,8 +76,6 @@ public class DeferHttpSessionJavaConfigTests {
 
 		@Bean
 		DefaultSecurityFilterChain springSecurity(HttpSecurity http) throws Exception {
-			LazyCsrfTokenRepository csrfRepository = new LazyCsrfTokenRepository(new HttpSessionCsrfTokenRepository());
-			csrfRepository.setDeferLoadToken(true);
 			// @formatter:off
 			http
 				.authorizeHttpRequests((requests) -> requests
@@ -87,9 +83,6 @@ public class DeferHttpSessionJavaConfigTests {
 				)
 				.sessionManagement((sessions) -> sessions
 					.requireExplicitAuthenticationStrategy(true)
-				)
-				.csrf((csrf) -> csrf
-					.csrfTokenRepository(csrfRepository)
 				);
 			// @formatter:on
 			return http.build();

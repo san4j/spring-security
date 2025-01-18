@@ -37,6 +37,7 @@ import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.context.SecurityContextHolderStrategy;
 import org.springframework.util.Assert;
+import org.springframework.util.function.SingletonSupplier;
 import org.springframework.web.filter.GenericFilterBean;
 
 /**
@@ -45,11 +46,12 @@ import org.springframework.web.filter.GenericFilterBean;
  *
  * @author Ben Alex
  * @author Luke Taylor
+ * @author Evgeniy Cheban
  */
 public class AnonymousAuthenticationFilter extends GenericFilterBean implements InitializingBean {
 
 	private SecurityContextHolderStrategy securityContextHolderStrategy = SecurityContextHolder
-			.getContextHolderStrategy();
+		.getContextHolderStrategy();
 
 	private AuthenticationDetailsSource<HttpServletRequest, ?> authenticationDetailsSource = new WebAuthenticationDetailsSource();
 
@@ -94,16 +96,16 @@ public class AnonymousAuthenticationFilter extends GenericFilterBean implements 
 			throws IOException, ServletException {
 		Supplier<SecurityContext> deferredContext = this.securityContextHolderStrategy.getDeferredContext();
 		this.securityContextHolderStrategy
-				.setDeferredContext(defaultWithAnonymous((HttpServletRequest) req, deferredContext));
+			.setDeferredContext(defaultWithAnonymous((HttpServletRequest) req, deferredContext));
 		chain.doFilter(req, res);
 	}
 
 	private Supplier<SecurityContext> defaultWithAnonymous(HttpServletRequest request,
 			Supplier<SecurityContext> currentDeferredContext) {
-		return () -> {
+		return SingletonSupplier.of(() -> {
 			SecurityContext currentContext = currentDeferredContext.get();
 			return defaultWithAnonymous(request, currentContext);
-		};
+		});
 	}
 
 	private SecurityContext defaultWithAnonymous(HttpServletRequest request, SecurityContext currentContext) {

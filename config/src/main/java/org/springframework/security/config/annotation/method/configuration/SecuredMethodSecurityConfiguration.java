@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,29 @@
 
 package org.springframework.security.config.annotation.method.configuration;
 
-import org.springframework.aop.Advisor;
+import java.util.function.Supplier;
+
+import org.aopalliance.intercept.MethodInterceptor;
+import org.aopalliance.intercept.MethodInvocation;
+
+import org.springframework.aop.Pointcut;
+import org.springframework.aop.framework.AopInfrastructureBean;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.ImportAware;
 import org.springframework.context.annotation.Role;
+import org.springframework.core.type.AnnotationMetadata;
 import org.springframework.security.access.annotation.Secured;
+import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
+import org.springframework.security.authorization.AuthoritiesAuthorizationManager;
+import org.springframework.security.authorization.AuthorizationEventPublisher;
+import org.springframework.security.authorization.AuthorizationManager;
 import org.springframework.security.authorization.method.AuthorizationManagerBeforeMethodInterceptor;
-import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.authorization.method.SecuredAuthorizationManager;
+import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.core.context.SecurityContextHolderStrategy;
 
 /**
@@ -35,24 +49,56 @@ import org.springframework.security.core.context.SecurityContextHolderStrategy;
  * @since 5.6
  * @see EnableMethodSecurity
  */
-@Configuration(proxyBeanMethods = false)
+@Configuration(value = "_securedMethodSecurityConfiguration", proxyBeanMethods = false)
 @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-final class SecuredMethodSecurityConfiguration {
+final class SecuredMethodSecurityConfiguration implements ImportAware, AopInfrastructureBean {
 
-	private SecurityContextHolderStrategy securityContextHolderStrategy = SecurityContextHolder
-			.getContextHolderStrategy();
+	private static final Pointcut pointcut = AuthorizationManagerBeforeMethodInterceptor.secured().getPointcut();
+
+	private final SecuredAuthorizationManager authorizationManager = new SecuredAuthorizationManager();
+
+	private final AuthorizationManagerBeforeMethodInterceptor methodInterceptor;
+
+	SecuredMethodSecurityConfiguration(
+			ObjectProvider<ObjectPostProcessor<AuthorizationManager<MethodInvocation>>> postProcessors) {
+		ObjectPostProcessor<AuthorizationManager<MethodInvocation>> postProcessor = postProcessors
+			.getIfUnique(ObjectPostProcessor::identity);
+		AuthorizationManager<MethodInvocation> manager = postProcessor.postProcess(this.authorizationManager);
+		this.methodInterceptor = AuthorizationManagerBeforeMethodInterceptor.secured(manager);
+	}
 
 	@Bean
 	@Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-	Advisor securedAuthorizationMethodInterceptor() {
-		AuthorizationManagerBeforeMethodInterceptor interceptor = AuthorizationManagerBeforeMethodInterceptor.secured();
-		interceptor.setSecurityContextHolderStrategy(this.securityContextHolderStrategy);
-		return interceptor;
+	static MethodInterceptor securedAuthorizationMethodInterceptor(
+			ObjectProvider<SecuredMethodSecurityConfiguration> securedMethodSecurityConfiguration) {
+		Supplier<AuthorizationManagerBeforeMethodInterceptor> supplier = () -> {
+			SecuredMethodSecurityConfiguration configuration = securedMethodSecurityConfiguration.getObject();
+			return configuration.methodInterceptor;
+		};
+		return new DeferringMethodInterceptor<>(pointcut, supplier);
+	}
+
+	@Override
+	public void setImportMetadata(AnnotationMetadata importMetadata) {
+		EnableMethodSecurity annotation = importMetadata.getAnnotations().get(EnableMethodSecurity.class).synthesize();
+		this.methodInterceptor.setOrder(this.methodInterceptor.getOrder() + annotation.offset());
+	}
+
+	@Autowired(required = false)
+	void setRoleHierarchy(RoleHierarchy roleHierarchy) {
+		AuthoritiesAuthorizationManager authoritiesAuthorizationManager = new AuthoritiesAuthorizationManager();
+		authoritiesAuthorizationManager.setRoleHierarchy(roleHierarchy);
+		this.authorizationManager.setAuthoritiesAuthorizationManager(authoritiesAuthorizationManager);
 	}
 
 	@Autowired(required = false)
 	void setSecurityContextHolderStrategy(SecurityContextHolderStrategy securityContextHolderStrategy) {
-		this.securityContextHolderStrategy = securityContextHolderStrategy;
+		this.methodInterceptor.setSecurityContextHolderStrategy(securityContextHolderStrategy);
+	}
+
+	@Autowired(required = false)
+	void setEventPublisher(AuthorizationEventPublisher eventPublisher) {
+		this.methodInterceptor.setAuthorizationEventPublisher(eventPublisher);
 	}
 
 }

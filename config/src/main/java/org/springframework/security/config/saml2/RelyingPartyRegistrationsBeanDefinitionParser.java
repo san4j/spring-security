@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,6 +39,7 @@ import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.security.converter.RsaKeyConverters;
 import org.springframework.security.saml2.core.Saml2X509Credential;
+import org.springframework.security.saml2.provider.service.registration.AssertingPartyMetadata;
 import org.springframework.security.saml2.provider.service.registration.InMemoryRelyingPartyRegistrationRepository;
 import org.springframework.security.saml2.provider.service.registration.RelyingPartyRegistration;
 import org.springframework.security.saml2.provider.service.registration.RelyingPartyRegistrations;
@@ -63,6 +64,8 @@ public final class RelyingPartyRegistrationsBeanDefinitionParser implements Bean
 	private static final String ELT_VERIFICATION_CREDENTIAL = "verification-credential";
 
 	private static final String ELT_ENCRYPTION_CREDENTIAL = "encryption-credential";
+
+	private static final String ATT_ID = "id";
 
 	private static final String ATT_REGISTRATION_ID = "registration-id";
 
@@ -105,10 +108,14 @@ public final class RelyingPartyRegistrationsBeanDefinitionParser implements Bean
 		List<RelyingPartyRegistration> relyingPartyRegistrations = getRelyingPartyRegistrations(element,
 				assertingParties, parserContext);
 		BeanDefinition relyingPartyRegistrationRepositoryBean = BeanDefinitionBuilder
-				.rootBeanDefinition(InMemoryRelyingPartyRegistrationRepository.class)
-				.addConstructorArgValue(relyingPartyRegistrations).getBeanDefinition();
-		String relyingPartyRegistrationRepositoryId = parserContext.getReaderContext()
+			.rootBeanDefinition(InMemoryRelyingPartyRegistrationRepository.class)
+			.addConstructorArgValue(relyingPartyRegistrations)
+			.getBeanDefinition();
+		String relyingPartyRegistrationRepositoryId = element.getAttribute(ATT_ID);
+		if (!StringUtils.hasText(relyingPartyRegistrationRepositoryId)) {
+			relyingPartyRegistrationRepositoryId = parserContext.getReaderContext()
 				.generateBeanName(relyingPartyRegistrationRepositoryBean);
+		}
 		parserContext.registerBeanComponent(new BeanComponentDefinition(relyingPartyRegistrationRepositoryBean,
 				relyingPartyRegistrationRepositoryId));
 		parserContext.popAndRegisterContainingComponent();
@@ -128,7 +135,7 @@ public final class RelyingPartyRegistrationsBeanDefinitionParser implements Bean
 			String signingAlgorithms = assertingPartyElt.getAttribute(ATT_SIGNING_ALGORITHMS);
 			String singleLogoutServiceLocation = assertingPartyElt.getAttribute(ATT_SINGLE_LOGOUT_SERVICE_LOCATION);
 			String singleLogoutServiceResponseLocation = assertingPartyElt
-					.getAttribute(ATT_SINGLE_LOGOUT_SERVICE_RESPONSE_LOCATION);
+				.getAttribute(ATT_SINGLE_LOGOUT_SERVICE_RESPONSE_LOCATION);
 			String singleLogoutServiceBinding = assertingPartyElt.getAttribute(ATT_SINGLE_LOGOUT_SERVICE_BINDING);
 			assertingParty.put(ATT_ASSERTING_PARTY_ID, assertingPartyId);
 			assertingParty.put(ATT_ENTITY_ID, entityId);
@@ -147,7 +154,7 @@ public final class RelyingPartyRegistrationsBeanDefinitionParser implements Bean
 	}
 
 	private static void addVerificationCredentials(Map<String, Object> assertingParty,
-			RelyingPartyRegistration.AssertingPartyDetails.Builder builder) {
+			AssertingPartyMetadata.Builder<?> builder) {
 		List<String> verificationCertificateLocations = (List<String>) assertingParty.get(ELT_VERIFICATION_CREDENTIAL);
 		List<Saml2X509Credential> verificationCredentials = new ArrayList<>();
 		for (String certificateLocation : verificationCertificateLocations) {
@@ -157,7 +164,7 @@ public final class RelyingPartyRegistrationsBeanDefinitionParser implements Bean
 	}
 
 	private static void addEncryptionCredentials(Map<String, Object> assertingParty,
-			RelyingPartyRegistration.AssertingPartyDetails.Builder builder) {
+			AssertingPartyMetadata.Builder<?> builder) {
 		List<String> encryptionCertificateLocations = (List<String>) assertingParty.get(ELT_ENCRYPTION_CREDENTIAL);
 		List<Saml2X509Credential> encryptionCredentials = new ArrayList<>();
 		for (String certificateLocation : encryptionCertificateLocations) {
@@ -206,41 +213,62 @@ public final class RelyingPartyRegistrationsBeanDefinitionParser implements Bean
 	private static RelyingPartyRegistration.Builder getBuilderFromMetadataLocationIfPossible(
 			Element relyingPartyRegistrationElt, Map<String, Map<String, Object>> assertingParties,
 			ParserContext parserContext) {
-		String registrationId = relyingPartyRegistrationElt.getAttribute(ATT_REGISTRATION_ID);
-		String metadataLocation = relyingPartyRegistrationElt.getAttribute(ATT_METADATA_LOCATION);
-		String singleLogoutServiceLocation = relyingPartyRegistrationElt
-				.getAttribute(ATT_SINGLE_LOGOUT_SERVICE_LOCATION);
-		String singleLogoutServiceResponseLocation = relyingPartyRegistrationElt
-				.getAttribute(ATT_SINGLE_LOGOUT_SERVICE_RESPONSE_LOCATION);
-		Saml2MessageBinding singleLogoutServiceBinding = getSingleLogoutServiceBinding(relyingPartyRegistrationElt);
+		String registrationId = resolveAttribute(parserContext,
+				relyingPartyRegistrationElt.getAttribute(ATT_REGISTRATION_ID));
+		String metadataLocation = resolveAttribute(parserContext,
+				relyingPartyRegistrationElt.getAttribute(ATT_METADATA_LOCATION));
+		RelyingPartyRegistration.Builder builder;
 		if (StringUtils.hasText(metadataLocation)) {
-			return RelyingPartyRegistrations.fromMetadataLocation(metadataLocation).registrationId(registrationId)
-					.singleLogoutServiceLocation(singleLogoutServiceLocation)
-					.singleLogoutServiceResponseLocation(singleLogoutServiceResponseLocation)
-					.singleLogoutServiceBinding(singleLogoutServiceBinding);
+			builder = RelyingPartyRegistrations.fromMetadataLocation(metadataLocation).registrationId(registrationId);
 		}
-		String entityId = relyingPartyRegistrationElt.getAttribute(ATT_ENTITY_ID);
-		String assertionConsumerServiceLocation = relyingPartyRegistrationElt
-				.getAttribute(ATT_ASSERTION_CONSUMER_SERVICE_LOCATION);
+		else {
+			builder = RelyingPartyRegistration.withRegistrationId(registrationId)
+				.assertingPartyMetadata((apBuilder) -> buildAssertingParty(relyingPartyRegistrationElt,
+						assertingParties, apBuilder, parserContext));
+		}
+		addRemainingProperties(parserContext, relyingPartyRegistrationElt, builder);
+		return builder;
+	}
+
+	private static void addRemainingProperties(ParserContext pc, Element relyingPartyRegistrationElt,
+			RelyingPartyRegistration.Builder builder) {
+		String entityId = resolveAttribute(pc, relyingPartyRegistrationElt.getAttribute(ATT_ENTITY_ID));
+		String singleLogoutServiceLocation = resolveAttribute(pc,
+				relyingPartyRegistrationElt.getAttribute(ATT_SINGLE_LOGOUT_SERVICE_LOCATION));
+		String singleLogoutServiceResponseLocation = resolveAttribute(pc,
+				relyingPartyRegistrationElt.getAttribute(ATT_SINGLE_LOGOUT_SERVICE_RESPONSE_LOCATION));
+		Saml2MessageBinding singleLogoutServiceBinding = getSingleLogoutServiceBinding(relyingPartyRegistrationElt);
+		String assertionConsumerServiceLocation = resolveAttribute(pc,
+				relyingPartyRegistrationElt.getAttribute(ATT_ASSERTION_CONSUMER_SERVICE_LOCATION));
 		Saml2MessageBinding assertionConsumerServiceBinding = getAssertionConsumerServiceBinding(
 				relyingPartyRegistrationElt);
-		return RelyingPartyRegistration.withRegistrationId(registrationId).entityId(entityId)
-				.assertionConsumerServiceLocation(assertionConsumerServiceLocation)
-				.assertionConsumerServiceBinding(assertionConsumerServiceBinding)
-				.singleLogoutServiceLocation(singleLogoutServiceLocation)
-				.singleLogoutServiceResponseLocation(singleLogoutServiceResponseLocation)
-				.singleLogoutServiceBinding(singleLogoutServiceBinding)
-				.assertingPartyDetails((builder) -> buildAssertingParty(relyingPartyRegistrationElt, assertingParties,
-						builder, parserContext));
+		if (StringUtils.hasText(entityId)) {
+			builder.entityId(entityId);
+		}
+		if (StringUtils.hasText(singleLogoutServiceLocation)) {
+			builder.singleLogoutServiceLocation(singleLogoutServiceLocation);
+		}
+		if (StringUtils.hasText(singleLogoutServiceResponseLocation)) {
+			builder.singleLogoutServiceResponseLocation(singleLogoutServiceResponseLocation);
+		}
+		if (singleLogoutServiceBinding != null) {
+			builder.singleLogoutServiceBinding(singleLogoutServiceBinding);
+		}
+		if (StringUtils.hasText(assertionConsumerServiceLocation)) {
+			builder.assertionConsumerServiceLocation(assertionConsumerServiceLocation);
+		}
+		if (assertionConsumerServiceBinding != null) {
+			builder.assertionConsumerServiceBinding(assertionConsumerServiceBinding);
+		}
 	}
 
 	private static void buildAssertingParty(Element relyingPartyElt, Map<String, Map<String, Object>> assertingParties,
-			RelyingPartyRegistration.AssertingPartyDetails.Builder builder, ParserContext parserContext) {
+			AssertingPartyMetadata.Builder<?> builder, ParserContext parserContext) {
 		String assertingPartyId = relyingPartyElt.getAttribute(ATT_ASSERTING_PARTY_ID);
 		if (!assertingParties.containsKey(assertingPartyId)) {
 			Object source = parserContext.extractSource(relyingPartyElt);
 			parserContext.getReaderContext()
-					.error(String.format("Could not find asserting party with id %s", assertingPartyId), source);
+				.error(String.format("Could not find asserting party with id %s", assertingPartyId), source);
 		}
 		Map<String, Object> assertingParty = assertingParties.get(assertingPartyId);
 		String entityId = getAsString(assertingParty, ATT_ENTITY_ID);
@@ -255,19 +283,20 @@ public final class RelyingPartyRegistrationsBeanDefinitionParser implements Bean
 		String singleLogoutServiceBinding = getAsString(assertingParty, ATT_SINGLE_LOGOUT_SERVICE_BINDING);
 		Saml2MessageBinding saml2LogoutMessageBinding = StringUtils.hasText(singleLogoutServiceBinding)
 				? Saml2MessageBinding.valueOf(singleLogoutServiceBinding) : Saml2MessageBinding.REDIRECT;
-		builder.entityId(entityId).wantAuthnRequestsSigned(Boolean.parseBoolean(wantAuthnRequestsSigned))
-				.singleSignOnServiceLocation(singleSignOnServiceLocation)
-				.singleSignOnServiceBinding(saml2MessageBinding)
-				.singleLogoutServiceLocation(singleLogoutServiceLocation)
-				.singleLogoutServiceResponseLocation(singleLogoutServiceResponseLocation)
-				.singleLogoutServiceBinding(saml2LogoutMessageBinding);
+		builder.entityId(entityId)
+			.wantAuthnRequestsSigned(Boolean.parseBoolean(wantAuthnRequestsSigned))
+			.singleSignOnServiceLocation(singleSignOnServiceLocation)
+			.singleSignOnServiceBinding(saml2MessageBinding)
+			.singleLogoutServiceLocation(singleLogoutServiceLocation)
+			.singleLogoutServiceResponseLocation(singleLogoutServiceResponseLocation)
+			.singleLogoutServiceBinding(saml2LogoutMessageBinding);
 		addSigningAlgorithms(assertingParty, builder);
 		addVerificationCredentials(assertingParty, builder);
 		addEncryptionCredentials(assertingParty, builder);
 	}
 
 	private static void addSigningAlgorithms(Map<String, Object> assertingParty,
-			RelyingPartyRegistration.AssertingPartyDetails.Builder builder) {
+			AssertingPartyMetadata.Builder<?> builder) {
 		String signingAlgorithmsAttr = getAsString(assertingParty, ATT_SIGNING_ALGORITHMS);
 		if (StringUtils.hasText(signingAlgorithmsAttr)) {
 			List<String> signingAlgorithms = Arrays.asList(signingAlgorithmsAttr.split(","));
@@ -305,11 +334,11 @@ public final class RelyingPartyRegistrationsBeanDefinitionParser implements Bean
 
 	private static Saml2MessageBinding getAssertionConsumerServiceBinding(Element relyingPartyRegistrationElt) {
 		String assertionConsumerServiceBinding = relyingPartyRegistrationElt
-				.getAttribute(ATT_ASSERTION_CONSUMER_SERVICE_BINDING);
+			.getAttribute(ATT_ASSERTION_CONSUMER_SERVICE_BINDING);
 		if (StringUtils.hasText(assertionConsumerServiceBinding)) {
 			return Saml2MessageBinding.valueOf(assertionConsumerServiceBinding);
 		}
-		return Saml2MessageBinding.REDIRECT;
+		return null;
 	}
 
 	private static Saml2MessageBinding getSingleLogoutServiceBinding(Element relyingPartyRegistrationElt) {
@@ -317,7 +346,7 @@ public final class RelyingPartyRegistrationsBeanDefinitionParser implements Bean
 		if (StringUtils.hasText(singleLogoutServiceBinding)) {
 			return Saml2MessageBinding.valueOf(singleLogoutServiceBinding);
 		}
-		return Saml2MessageBinding.POST;
+		return null;
 	}
 
 	private static Saml2X509Credential getSaml2VerificationCredential(String certificateLocation) {
@@ -371,6 +400,10 @@ public final class RelyingPartyRegistrationsBeanDefinitionParser implements Bean
 		catch (Exception ex) {
 			throw new IllegalArgumentException(ex);
 		}
+	}
+
+	private static String resolveAttribute(ParserContext pc, String value) {
+		return pc.getReaderContext().getEnvironment().resolvePlaceholders(value);
 	}
 
 }

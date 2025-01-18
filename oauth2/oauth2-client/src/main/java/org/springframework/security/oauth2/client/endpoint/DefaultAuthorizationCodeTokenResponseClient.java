@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2018 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,6 @@ import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AccessTokenResponse;
 import org.springframework.security.oauth2.core.http.converter.OAuth2AccessTokenResponseHttpMessageConverter;
 import org.springframework.util.Assert;
-import org.springframework.util.CollectionUtils;
 import org.springframework.web.client.ResponseErrorHandler;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestOperations;
@@ -53,13 +52,16 @@ import org.springframework.web.client.RestTemplate;
  * @see <a target="_blank" href=
  * "https://tools.ietf.org/html/rfc6749#section-4.1.4">Section 4.1.4 Access Token Response
  * (Authorization Code Grant)</a>
+ * @deprecated Use {@link RestClientAuthorizationCodeTokenResponseClient} instead
  */
+@Deprecated(since = "6.4")
 public final class DefaultAuthorizationCodeTokenResponseClient
 		implements OAuth2AccessTokenResponseClient<OAuth2AuthorizationCodeGrantRequest> {
 
 	private static final String INVALID_TOKEN_RESPONSE_ERROR_CODE = "invalid_token_response";
 
-	private Converter<OAuth2AuthorizationCodeGrantRequest, RequestEntity<?>> requestEntityConverter = new OAuth2AuthorizationCodeGrantRequestEntityConverter();
+	private Converter<OAuth2AuthorizationCodeGrantRequest, RequestEntity<?>> requestEntityConverter = new ClientAuthenticationMethodValidatingRequestEntityConverter<>(
+			new OAuth2AuthorizationCodeGrantRequestEntityConverter());
 
 	private RestOperations restOperations;
 
@@ -76,18 +78,14 @@ public final class DefaultAuthorizationCodeTokenResponseClient
 		Assert.notNull(authorizationCodeGrantRequest, "authorizationCodeGrantRequest cannot be null");
 		RequestEntity<?> request = this.requestEntityConverter.convert(authorizationCodeGrantRequest);
 		ResponseEntity<OAuth2AccessTokenResponse> response = getResponse(request);
+		// As per spec, in Section 5.1 Successful Access Token Response
+		// https://tools.ietf.org/html/rfc6749#section-5.1
+		// If AccessTokenResponse.scope is empty, then we assume all requested scopes were
+		// granted.
+		// However, we use the explicit scopes returned in the response (if any).
 		OAuth2AccessTokenResponse tokenResponse = response.getBody();
-		if (CollectionUtils.isEmpty(tokenResponse.getAccessToken().getScopes())) {
-			// As per spec, in Section 5.1 Successful Access Token Response
-			// https://tools.ietf.org/html/rfc6749#section-5.1
-			// If AccessTokenResponse.scope is empty, then default to the scope
-			// originally requested by the client in the Token Request
-			// @formatter:off
-			tokenResponse = OAuth2AccessTokenResponse.withResponse(tokenResponse)
-					.scopes(authorizationCodeGrantRequest.getClientRegistration().getScopes())
-					.build();
-			// @formatter:on
-		}
+		Assert.notNull(tokenResponse,
+				"The authorization server responded to this Authorization Code grant request with an empty body; as such, it cannot be materialized into an OAuth2AccessTokenResponse instance. Please check the HTTP response code in your server logs for more details.");
 		return tokenResponse;
 	}
 

@@ -79,7 +79,7 @@ public class InterceptMethodsBeanDefinitionDecorator implements BeanDefinitionDe
 		protected BeanDefinition createInterceptorDefinition(Node node) {
 			Element interceptMethodsElt = (Element) node;
 			BeanDefinitionBuilder interceptor = BeanDefinitionBuilder
-					.rootBeanDefinition(AuthorizationManagerBeforeMethodInterceptor.class);
+				.rootBeanDefinition(AuthorizationManagerBeforeMethodInterceptor.class);
 			interceptor.setAutowireMode(AbstractBeanDefinition.AUTOWIRE_BY_TYPE);
 			Map<Pointcut, BeanMetadataElement> managers = new ManagedMap<>();
 			List<Element> methods = DomUtils.getChildElementsByTagName(interceptMethodsElt, Elements.PROTECT);
@@ -88,15 +88,19 @@ public class InterceptMethodsBeanDefinitionDecorator implements BeanDefinitionDe
 						authorizationManager(interceptMethodsElt, protectElt));
 			}
 			return interceptor.addConstructorArgValue(Pointcut.TRUE)
-					.addConstructorArgValue(authorizationManager(managers)).getBeanDefinition();
+				.addConstructorArgValue(authorizationManager(managers))
+				.getBeanDefinition();
 		}
 
 		boolean supports(Node node) {
 			Element interceptMethodsElt = (Element) node;
-			if (Boolean.parseBoolean(interceptMethodsElt.getAttribute(ATT_USE_AUTHORIZATION_MGR))) {
+			if (StringUtils.hasText(interceptMethodsElt.getAttribute(ATT_AUTHORIZATION_MGR))) {
 				return true;
 			}
-			return StringUtils.hasText(interceptMethodsElt.getAttribute(ATT_AUTHORIZATION_MGR));
+			if (StringUtils.hasText(interceptMethodsElt.getAttribute(ATT_USE_AUTHORIZATION_MGR))) {
+				return Boolean.parseBoolean(interceptMethodsElt.getAttribute(ATT_USE_AUTHORIZATION_MGR));
+			}
+			return true;
 		}
 
 		private Pointcut pointcut(Element interceptorElt, Element protectElt) {
@@ -112,12 +116,14 @@ public class InterceptMethodsBeanDefinitionDecorator implements BeanDefinitionDe
 			}
 			String access = protectElt.getAttribute(ATT_ACCESS);
 			return BeanDefinitionBuilder.rootBeanDefinition(MethodExpressionAuthorizationManager.class)
-					.addConstructorArgValue(access).getBeanDefinition();
+				.addConstructorArgValue(access)
+				.getBeanDefinition();
 		}
 
 		private BeanMetadataElement authorizationManager(Map<Pointcut, BeanMetadataElement> managers) {
 			return BeanDefinitionBuilder.rootBeanDefinition(PointcutDelegatingAuthorizationManager.class)
-					.addConstructorArgValue(managers).getBeanDefinition();
+				.addConstructorArgValue(managers)
+				.getBeanDefinition();
 		}
 
 	}
@@ -125,7 +131,11 @@ public class InterceptMethodsBeanDefinitionDecorator implements BeanDefinitionDe
 	/**
 	 * This is the real class which does the work. We need access to the ParserContext in
 	 * order to do bean registration.
+	 *
+	 * @deprecated Use
+	 * {@link InternalAuthorizationManagerInterceptMethodsBeanDefinitionDecorator}
 	 */
+	@Deprecated
 	static class InternalInterceptMethodsBeanDefinitionDecorator
 			extends AbstractInterceptorDrivenBeanDefinitionDecorator {
 
@@ -139,7 +149,7 @@ public class InterceptMethodsBeanDefinitionDecorator implements BeanDefinitionDe
 		protected BeanDefinition createInterceptorDefinition(Node node) {
 			Element interceptMethodsElt = (Element) node;
 			BeanDefinitionBuilder interceptor = BeanDefinitionBuilder
-					.rootBeanDefinition(MethodSecurityInterceptor.class);
+				.rootBeanDefinition(MethodSecurityInterceptor.class);
 			// Default to autowiring to pick up after invocation mgr
 			interceptor.setAutowireMode(AbstractBeanDefinition.AUTOWIRE_BY_TYPE);
 			String accessManagerId = interceptMethodsElt.getAttribute(ATT_ACCESS_MGR);

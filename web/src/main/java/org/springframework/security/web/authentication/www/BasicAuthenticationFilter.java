@@ -28,16 +28,17 @@ import org.springframework.core.log.LogMessage;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.AuthenticationDetailsSource;
 import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.context.SecurityContextHolderStrategy;
 import org.springframework.security.web.AuthenticationEntryPoint;
+import org.springframework.security.web.authentication.AuthenticationConverter;
 import org.springframework.security.web.authentication.NullRememberMeServices;
 import org.springframework.security.web.authentication.RememberMeServices;
-import org.springframework.security.web.context.NullSecurityContextRepository;
+import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
+import org.springframework.security.web.context.RequestAttributeSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.util.Assert;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -81,9 +82,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * <p>
  * Basic authentication is an attractive protocol because it is simple and widely
  * deployed. However, it still transmits a password in clear text and as such is
- * undesirable in many situations. Digest authentication is also provided by Spring
- * Security and should be used instead of Basic authentication wherever possible. See
- * {@link org.springframework.security.web.authentication.www.DigestAuthenticationFilter}.
+ * undesirable in many situations.
  * <p>
  * Note that if a {@link RememberMeServices} is set, this filter will automatically send
  * back remember-me details to the client. Therefore, subsequent requests will not need to
@@ -95,7 +94,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class BasicAuthenticationFilter extends OncePerRequestFilter {
 
 	private SecurityContextHolderStrategy securityContextHolderStrategy = SecurityContextHolder
-			.getContextHolderStrategy();
+		.getContextHolderStrategy();
 
 	private AuthenticationEntryPoint authenticationEntryPoint;
 
@@ -107,9 +106,9 @@ public class BasicAuthenticationFilter extends OncePerRequestFilter {
 
 	private String credentialsCharset = "UTF-8";
 
-	private BasicAuthenticationConverter authenticationConverter = new BasicAuthenticationConverter();
+	private AuthenticationConverter authenticationConverter = new BasicAuthenticationConverter();
 
-	private SecurityContextRepository securityContextRepository = new NullSecurityContextRepository();
+	private SecurityContextRepository securityContextRepository = new RequestAttributeSecurityContextRepository();
 
 	/**
 	 * Creates an instance which will authenticate against the supplied
@@ -151,6 +150,18 @@ public class BasicAuthenticationFilter extends OncePerRequestFilter {
 		this.securityContextRepository = securityContextRepository;
 	}
 
+	/**
+	 * Sets the
+	 * {@link org.springframework.security.web.authentication.AuthenticationConverter} to
+	 * use. Defaults to {@link BasicAuthenticationConverter}
+	 * @param authenticationConverter the converter to use
+	 * @since 6.2
+	 */
+	public void setAuthenticationConverter(AuthenticationConverter authenticationConverter) {
+		Assert.notNull(authenticationConverter, "authenticationConverter cannot be null");
+		this.authenticationConverter = authenticationConverter;
+	}
+
 	@Override
 	public void afterPropertiesSet() {
 		Assert.notNull(this.authenticationManager, "An AuthenticationManager is required");
@@ -163,7 +174,7 @@ public class BasicAuthenticationFilter extends OncePerRequestFilter {
 	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
 			throws IOException, ServletException {
 		try {
-			UsernamePasswordAuthenticationToken authRequest = this.authenticationConverter.convert(request);
+			Authentication authRequest = this.authenticationConverter.convert(request);
 			if (authRequest == null) {
 				this.logger.trace("Did not process authentication request since failed to find "
 						+ "username and password in Basic Authorization header");
@@ -202,20 +213,16 @@ public class BasicAuthenticationFilter extends OncePerRequestFilter {
 		chain.doFilter(request, response);
 	}
 
-	private boolean authenticationIsRequired(String username) {
+	protected boolean authenticationIsRequired(String username) {
 		// Only reauthenticate if username doesn't match SecurityContextHolder and user
 		// isn't authenticated (see SEC-53)
 		Authentication existingAuth = this.securityContextHolderStrategy.getContext().getAuthentication();
-		if (existingAuth == null || !existingAuth.isAuthenticated()) {
-			return true;
-		}
-		// Limit username comparison to providers which use usernames (ie
-		// UsernamePasswordAuthenticationToken) (see SEC-348)
-		if (existingAuth instanceof UsernamePasswordAuthenticationToken && !existingAuth.getName().equals(username)) {
+		if (existingAuth == null || !existingAuth.getName().equals(username) || !existingAuth.isAuthenticated()) {
 			return true;
 		}
 		// Handle unusual condition where an AnonymousAuthenticationToken is already
-		// present. This shouldn't happen very often, as BasicProcessingFitler is meant to
+		// present. This shouldn't happen very often, as BasicAuthenticationFilter is
+		// meant to
 		// be earlier in the filter chain than AnonymousAuthenticationFilter.
 		// Nevertheless, presence of both an AnonymousAuthenticationToken together with a
 		// BASIC authentication request header should indicate reauthentication using the
@@ -257,9 +264,19 @@ public class BasicAuthenticationFilter extends OncePerRequestFilter {
 		this.securityContextHolderStrategy = securityContextHolderStrategy;
 	}
 
+	/**
+	 * Sets the {@link AuthenticationDetailsSource} to use. By default, it is set to use
+	 * the {@link WebAuthenticationDetailsSource}. Note that this configuration applies
+	 * exclusively when the {@link #authenticationConverter} is set to
+	 * {@link BasicAuthenticationConverter}. If you are utilizing a different
+	 * implementation, you will need to manually specify the authentication details on it.
+	 * @param authenticationDetailsSource the {@link AuthenticationDetailsSource} to use.
+	 */
 	public void setAuthenticationDetailsSource(
 			AuthenticationDetailsSource<HttpServletRequest, ?> authenticationDetailsSource) {
-		this.authenticationConverter.setAuthenticationDetailsSource(authenticationDetailsSource);
+		if (this.authenticationConverter instanceof BasicAuthenticationConverter basicAuthenticationConverter) {
+			basicAuthenticationConverter.setAuthenticationDetailsSource(authenticationDetailsSource);
+		}
 	}
 
 	public void setRememberMeServices(RememberMeServices rememberMeServices) {
@@ -267,10 +284,20 @@ public class BasicAuthenticationFilter extends OncePerRequestFilter {
 		this.rememberMeServices = rememberMeServices;
 	}
 
+	/**
+	 * Sets the charset to use when decoding credentials to {@link String}s. By default,
+	 * it is set to {@code UTF-8}. Note that this configuration applies exclusively when
+	 * the {@link #authenticationConverter} is set to
+	 * {@link BasicAuthenticationConverter}. If you are utilizing a different
+	 * implementation, you will need to manually specify the charset on it.
+	 * @param credentialsCharset the charset to use.
+	 */
 	public void setCredentialsCharset(String credentialsCharset) {
 		Assert.hasText(credentialsCharset, "credentialsCharset cannot be null or empty");
 		this.credentialsCharset = credentialsCharset;
-		this.authenticationConverter.setCredentialsCharset(Charset.forName(credentialsCharset));
+		if (this.authenticationConverter instanceof BasicAuthenticationConverter basicAuthenticationConverter) {
+			basicAuthenticationConverter.setCredentialsCharset(Charset.forName(credentialsCharset));
+		}
 	}
 
 	protected String getCredentialsCharset(HttpServletRequest httpRequest) {

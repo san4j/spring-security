@@ -25,7 +25,7 @@ import jakarta.servlet.http.HttpServletRequest;
  *
  * @author Steve Riesenberg
  * @since 5.8
- * @see CsrfTokenRequestProcessor
+ * @see CsrfTokenRequestAttributeHandler
  */
 @FunctionalInterface
 public interface CsrfTokenRequestResolver {

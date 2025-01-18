@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2021 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 
 import org.springframework.context.ApplicationContext;
-import org.springframework.http.HttpMethod;
 import org.springframework.security.access.AccessDecisionVoter;
 import org.springframework.security.access.ConfigAttribute;
 import org.springframework.security.access.PermissionEvaluator;
@@ -30,7 +29,7 @@ import org.springframework.security.access.SecurityConfig;
 import org.springframework.security.access.expression.SecurityExpressionHandler;
 import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
 import org.springframework.security.authentication.AuthenticationTrustResolver;
-import org.springframework.security.config.annotation.ObjectPostProcessor;
+import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.config.annotation.web.HttpSecurityBuilder;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.core.GrantedAuthorityDefaults;
@@ -38,7 +37,6 @@ import org.springframework.security.web.FilterInvocation;
 import org.springframework.security.web.access.expression.DefaultWebSecurityExpressionHandler;
 import org.springframework.security.web.access.expression.ExpressionBasedFilterInvocationSecurityMetadataSource;
 import org.springframework.security.web.access.expression.WebExpressionVoter;
-import org.springframework.security.web.servlet.util.matcher.MvcRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
@@ -77,9 +75,12 @@ import org.springframework.util.StringUtils;
  * @param <H> the type of {@link HttpSecurityBuilder} that is being configured
  * @author Rob Winch
  * @author Yanming Zhou
+ * @author Ngoc Nhan
  * @since 3.2
  * @see org.springframework.security.config.annotation.web.builders.HttpSecurity#authorizeRequests()
+ * @deprecated Use {@link AuthorizeHttpRequestsConfigurer} instead
  */
+@Deprecated
 public final class ExpressionUrlAuthorizationConfigurer<H extends HttpSecurityBuilder<H>>
 		extends AbstractInterceptUrlConfigurer<ExpressionUrlAuthorizationConfigurer<H>, H> {
 
@@ -106,10 +107,9 @@ public final class ExpressionUrlAuthorizationConfigurer<H extends HttpSecurityBu
 	 * @see HttpSecurity#authorizeRequests()
 	 */
 	public ExpressionUrlAuthorizationConfigurer(ApplicationContext context) {
-		String[] grantedAuthorityDefaultsBeanNames = context.getBeanNamesForType(GrantedAuthorityDefaults.class);
-		if (grantedAuthorityDefaultsBeanNames.length == 1) {
-			GrantedAuthorityDefaults grantedAuthorityDefaults = context.getBean(grantedAuthorityDefaultsBeanNames[0],
-					GrantedAuthorityDefaults.class);
+		GrantedAuthorityDefaults grantedAuthorityDefaults = context.getBeanProvider(GrantedAuthorityDefaults.class)
+			.getIfUnique();
+		if (grantedAuthorityDefaults != null) {
 			this.rolePrefix = grantedAuthorityDefaults.getRolePrefix();
 		}
 		else {
@@ -167,22 +167,11 @@ public final class ExpressionUrlAuthorizationConfigurer<H extends HttpSecurityBu
 		}
 		ApplicationContext context = http.getSharedObject(ApplicationContext.class);
 		if (context != null) {
-			String[] roleHiearchyBeanNames = context.getBeanNamesForType(RoleHierarchy.class);
-			if (roleHiearchyBeanNames.length == 1) {
-				defaultHandler.setRoleHierarchy(context.getBean(roleHiearchyBeanNames[0], RoleHierarchy.class));
-			}
-			String[] grantedAuthorityDefaultsBeanNames = context.getBeanNamesForType(GrantedAuthorityDefaults.class);
-			if (grantedAuthorityDefaultsBeanNames.length == 1) {
-				GrantedAuthorityDefaults grantedAuthorityDefaults = context
-						.getBean(grantedAuthorityDefaultsBeanNames[0], GrantedAuthorityDefaults.class);
-				defaultHandler.setDefaultRolePrefix(grantedAuthorityDefaults.getRolePrefix());
-			}
-			String[] permissionEvaluatorBeanNames = context.getBeanNamesForType(PermissionEvaluator.class);
-			if (permissionEvaluatorBeanNames.length == 1) {
-				PermissionEvaluator permissionEvaluator = context.getBean(permissionEvaluatorBeanNames[0],
-						PermissionEvaluator.class);
-				defaultHandler.setPermissionEvaluator(permissionEvaluator);
-			}
+			context.getBeanProvider(RoleHierarchy.class).ifUnique(defaultHandler::setRoleHierarchy);
+			context.getBeanProvider(GrantedAuthorityDefaults.class)
+				.ifUnique((grantedAuthorityDefaults) -> defaultHandler
+					.setDefaultRolePrefix(grantedAuthorityDefaults.getRolePrefix()));
+			context.getBeanProvider(PermissionEvaluator.class).ifUnique(defaultHandler::setPermissionEvaluator);
 		}
 		this.expressionHandler = postProcess(defaultHandler);
 		return this.expressionHandler;
@@ -221,16 +210,6 @@ public final class ExpressionUrlAuthorizationConfigurer<H extends HttpSecurityBu
 		}
 
 		@Override
-		public MvcMatchersAuthorizedUrl mvcMatchers(HttpMethod method, String... mvcPatterns) {
-			return new MvcMatchersAuthorizedUrl(createMvcMatchers(method, mvcPatterns));
-		}
-
-		@Override
-		public MvcMatchersAuthorizedUrl mvcMatchers(String... patterns) {
-			return mvcMatchers(null, patterns);
-		}
-
-		@Override
 		protected AuthorizedUrl chainRequestMatchersInternal(List<RequestMatcher> requestMatchers) {
 			return new AuthorizedUrl(requestMatchers);
 		}
@@ -259,33 +238,18 @@ public final class ExpressionUrlAuthorizationConfigurer<H extends HttpSecurityBu
 			return this;
 		}
 
+		/**
+		 * @deprecated
+		 */
+		@Deprecated(since = "6.4", forRemoval = true)
+		public ExpressionInterceptUrlRegistry withObjectPostProcessor(
+				org.springframework.security.config.annotation.ObjectPostProcessor<?> objectPostProcessor) {
+			addObjectPostProcessor(objectPostProcessor);
+			return this;
+		}
+
 		public H and() {
 			return ExpressionUrlAuthorizationConfigurer.this.and();
-		}
-
-	}
-
-	/**
-	 * An {@link AuthorizedUrl} that allows optionally configuring the
-	 * {@link MvcRequestMatcher#setMethod(HttpMethod)}
-	 *
-	 * @author Rob Winch
-	 */
-	public final class MvcMatchersAuthorizedUrl extends AuthorizedUrl {
-
-		/**
-		 * Creates a new instance
-		 * @param requestMatchers the {@link RequestMatcher} instances to map
-		 */
-		private MvcMatchersAuthorizedUrl(List<MvcRequestMatcher> requestMatchers) {
-			super(requestMatchers);
-		}
-
-		public AuthorizedUrl servletPath(String servletPath) {
-			for (MvcRequestMatcher matcher : (List<MvcRequestMatcher>) getMatchers()) {
-				matcher.setServletPath(servletPath);
-			}
-			return this;
 		}
 
 	}
@@ -329,7 +293,7 @@ public final class ExpressionUrlAuthorizationConfigurer<H extends HttpSecurityBu
 		 */
 		public ExpressionInterceptUrlRegistry hasRole(String role) {
 			return access(ExpressionUrlAuthorizationConfigurer
-					.hasRole(ExpressionUrlAuthorizationConfigurer.this.rolePrefix, role));
+				.hasRole(ExpressionUrlAuthorizationConfigurer.this.rolePrefix, role));
 		}
 
 		/**
@@ -343,7 +307,7 @@ public final class ExpressionUrlAuthorizationConfigurer<H extends HttpSecurityBu
 		 */
 		public ExpressionInterceptUrlRegistry hasAnyRole(String... roles) {
 			return access(ExpressionUrlAuthorizationConfigurer
-					.hasAnyRole(ExpressionUrlAuthorizationConfigurer.this.rolePrefix, roles));
+				.hasAnyRole(ExpressionUrlAuthorizationConfigurer.this.rolePrefix, roles));
 		}
 
 		/**

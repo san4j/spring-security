@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2021 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,9 @@ package org.springframework.security.authorization.method;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
+import java.util.Collection;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.function.Supplier;
 
@@ -27,13 +29,14 @@ import jakarta.annotation.security.PermitAll;
 import jakarta.annotation.security.RolesAllowed;
 import org.aopalliance.intercept.MethodInvocation;
 
-import org.springframework.aop.support.AopUtils;
-import org.springframework.core.annotation.AnnotationConfigurationException;
 import org.springframework.lang.NonNull;
-import org.springframework.security.authorization.AuthorityAuthorizationManager;
+import org.springframework.security.authorization.AuthoritiesAuthorizationManager;
 import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.authorization.AuthorizationManager;
+import org.springframework.security.authorization.AuthorizationResult;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.annotation.SecurityAnnotationScanner;
+import org.springframework.security.core.annotation.SecurityAnnotationScanners;
 import org.springframework.util.Assert;
 
 /**
@@ -43,21 +46,29 @@ import org.springframework.util.Assert;
  *
  * @author Evgeniy Cheban
  * @author Josh Cummings
+ * @author DingHao
  * @since 5.6
  */
 public final class Jsr250AuthorizationManager implements AuthorizationManager<MethodInvocation> {
 
-	private static final Set<Class<? extends Annotation>> JSR250_ANNOTATIONS = new HashSet<>();
-
-	static {
-		JSR250_ANNOTATIONS.add(DenyAll.class);
-		JSR250_ANNOTATIONS.add(PermitAll.class);
-		JSR250_ANNOTATIONS.add(RolesAllowed.class);
-	}
-
 	private final Jsr250AuthorizationManagerRegistry registry = new Jsr250AuthorizationManagerRegistry();
 
+	private AuthorizationManager<Collection<String>> authoritiesAuthorizationManager = new AuthoritiesAuthorizationManager();
+
 	private String rolePrefix = "ROLE_";
+
+	/**
+	 * Sets an {@link AuthorizationManager} that accepts a collection of authority
+	 * strings.
+	 * @param authoritiesAuthorizationManager the {@link AuthorizationManager} that
+	 * accepts a collection of authority strings to use
+	 * @since 6.2
+	 */
+	public void setAuthoritiesAuthorizationManager(
+			AuthorizationManager<Collection<String>> authoritiesAuthorizationManager) {
+		Assert.notNull(authoritiesAuthorizationManager, "authoritiesAuthorizationManager cannot be null");
+		this.authoritiesAuthorizationManager = authoritiesAuthorizationManager;
+	}
 
 	/**
 	 * Sets the role prefix. Defaults to "ROLE_".
@@ -76,7 +87,9 @@ public final class Jsr250AuthorizationManager implements AuthorizationManager<Me
 	 * @param methodInvocation the {@link MethodInvocation} to check
 	 * @return an {@link AuthorizationDecision} or null if the JSR-250 security
 	 * annotations is not present
+	 * @deprecated please use {@link #authorize(Supplier, Object)} instead
 	 */
+	@Deprecated
 	@Override
 	public AuthorizationDecision check(Supplier<Authentication> authentication, MethodInvocation methodInvocation) {
 		AuthorizationManager<MethodInvocation> delegate = this.registry.getManager(methodInvocation);
@@ -84,6 +97,9 @@ public final class Jsr250AuthorizationManager implements AuthorizationManager<Me
 	}
 
 	private final class Jsr250AuthorizationManagerRegistry extends AbstractAuthorizationManagerRegistry {
+
+		private final SecurityAnnotationScanner<?> scanner = SecurityAnnotationScanners
+			.requireUnique(List.of(DenyAll.class, PermitAll.class, RolesAllowed.class));
 
 		@NonNull
 		@Override
@@ -95,55 +111,45 @@ public final class Jsr250AuthorizationManager implements AuthorizationManager<Me
 			if (annotation instanceof PermitAll) {
 				return (a, o) -> new AuthorizationDecision(true);
 			}
-			if (annotation instanceof RolesAllowed) {
-				RolesAllowed rolesAllowed = (RolesAllowed) annotation;
-				return AuthorityAuthorizationManager.hasAnyRole(Jsr250AuthorizationManager.this.rolePrefix,
-						rolesAllowed.value());
+			if (annotation instanceof RolesAllowed rolesAllowed) {
+				return (AuthorizationManagerCheckAdapter<MethodInvocation>) (a,
+						o) -> Jsr250AuthorizationManager.this.authoritiesAuthorizationManager.authorize(a,
+								getAllowedRolesWithPrefix(rolesAllowed));
 			}
 			return NULL_MANAGER;
 		}
 
 		private Annotation findJsr250Annotation(Method method, Class<?> targetClass) {
-			Method specificMethod = AopUtils.getMostSpecificMethod(method, targetClass);
-			Annotation annotation = findAnnotation(specificMethod);
-			return (annotation != null) ? annotation : findAnnotation(specificMethod.getDeclaringClass());
+			Class<?> targetClassToUse = (targetClass != null) ? targetClass : method.getDeclaringClass();
+			return this.scanner.scan(method, targetClassToUse);
 		}
 
-		private Annotation findAnnotation(Method method) {
-			Set<Annotation> annotations = new HashSet<>();
-			for (Class<? extends Annotation> annotationClass : JSR250_ANNOTATIONS) {
-				Annotation annotation = AuthorizationAnnotationUtils.findUniqueAnnotation(method, annotationClass);
-				if (annotation != null) {
-					annotations.add(annotation);
-				}
+		private Set<String> getAllowedRolesWithPrefix(RolesAllowed rolesAllowed) {
+			Set<String> roles = new HashSet<>();
+			for (int i = 0; i < rolesAllowed.value().length; i++) {
+				roles.add(Jsr250AuthorizationManager.this.rolePrefix + rolesAllowed.value()[i]);
 			}
-			if (annotations.isEmpty()) {
-				return null;
-			}
-			if (annotations.size() > 1) {
-				throw new AnnotationConfigurationException(
-						"The JSR-250 specification disallows DenyAll, PermitAll, and RolesAllowed from appearing on the same method.");
-			}
-			return annotations.iterator().next();
+			return roles;
 		}
 
-		private Annotation findAnnotation(Class<?> clazz) {
-			Set<Annotation> annotations = new HashSet<>();
-			for (Class<? extends Annotation> annotationClass : JSR250_ANNOTATIONS) {
-				Annotation annotation = AuthorizationAnnotationUtils.findUniqueAnnotation(clazz, annotationClass);
-				if (annotation != null) {
-					annotations.add(annotation);
-				}
-			}
-			if (annotations.isEmpty()) {
+	}
+
+	private interface AuthorizationManagerCheckAdapter<T> extends AuthorizationManager<T> {
+
+		@Override
+		default AuthorizationDecision check(Supplier<Authentication> authentication, T object) {
+			AuthorizationResult result = authorize(authentication, object);
+			if (result == null) {
 				return null;
 			}
-			if (annotations.size() > 1) {
-				throw new AnnotationConfigurationException(
-						"The JSR-250 specification disallows DenyAll, PermitAll, and RolesAllowed from appearing on the same class definition.");
+			if (result instanceof AuthorizationDecision decision) {
+				return decision;
 			}
-			return annotations.iterator().next();
+			throw new IllegalArgumentException(
+					"please call #authorize or ensure that the result is of type AuthorizationDecision");
 		}
+
+		AuthorizationResult authorize(Supplier<Authentication> authentication, T object);
 
 	}
 

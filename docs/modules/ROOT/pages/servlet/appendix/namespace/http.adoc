@@ -31,7 +31,7 @@ The attributes on the `<http>` element control some of the properties on the cor
 
 [[nsa-http-use-authorization-manager]]
 * **use-authorization-manager**
-Use AuthorizationManager API instead of SecurityMetadataSource
+Use AuthorizationManager API instead of SecurityMetadataSource (defaults to true)
 
 [[nsa-http-authorization-manager-ref]]
 * **access-decision-manager-ref**
@@ -47,6 +47,9 @@ By default an `AffirmativeBased` implementation is used for with a `RoleVoter` a
 * **authentication-manager-ref**
 A reference to the `AuthenticationManager` used for the `FilterChain` created by this http element.
 
+[[nsa-http-observation-registry-ref]]
+* **observation-registry-ref**
+A reference to the `ObservationRegistry` used for the `FilterChain` and related components
 
 [[nsa-http-auto-config]]
 * **auto-config**
@@ -97,6 +100,12 @@ Corresponds to the `observeOncePerRequest` property of `FilterSecurityIntercepto
 Defaults to `false`.
 
 
+[[nsa-http-filter-all-dispatcher-types]]
+* **filter-all-dispatcher-types**
+Corresponds to the `shouldFilterAllDispatcherTypes` property of the `AuthorizationFilter`. Does not work when `use-authorization-manager=false`.
+Defaults to `true`.
+
+
 [[nsa-http-pattern]]
 * **pattern**
 Defining a pattern for the <<nsa-http,http>> element controls the requests which will be filtered through the list of filters which it defines.
@@ -117,7 +126,7 @@ Options are currently `mvc`, `ant`, `regex` and `ciRegex`, for Spring MVC, ant, 
 A separate instance is created for each <<nsa-intercept-url,intercept-url>> element using its <<nsa-intercept-url-pattern,pattern>>, <<nsa-intercept-url-method,method>> and <<nsa-intercept-url-servlet-path,servlet-path>> attributes.
 Ant paths are matched using an `AntPathRequestMatcher`, regular expressions are matched using a `RegexRequestMatcher` and for Spring MVC path matching the `MvcRequestMatcher` is used.
 See the Javadoc for these classes for more details on exactly how the matching is performed.
-Ant paths are the default strategy.
+MVC is the default strategy if Spring MVC is present in the classpath, if not, Ant paths are used.
 
 
 [[nsa-http-request-matcher-ref]]
@@ -154,7 +163,7 @@ Defaults to `true`.
 
 [[nsa-http-use-expressions]]
 * **use-expressions**
-Enables EL-expressions in the `access` attribute, as described in the chapter on xref:servlet/authorization/expression-based.adoc#el-access-web[expression-based access-control].
+Enables EL-expressions in the `access` attribute, as described in the chapter on xref:servlet/authorization/authorize-http-requests.adoc#authorization-expressions[expression-based access-control].
 The default value is true.
 
 
@@ -565,17 +574,10 @@ This is in no-way a full protection to XSS attacks!
 Do not include the header for https://en.wikipedia.org/wiki/Cross-site_scripting#Non-Persistent[reflected / Type-1 Cross-Site Scripting (XSS)] protection.
 
 
-[[nsa-xss-protection-enabled]]
-* **xss-protection-enabled**
-Explicitly enable or disable https://en.wikipedia.org/wiki/Cross-site_scripting#Non-Persistent[reflected / Type-1 Cross-Site Scripting (XSS)] protection.
-
-
-[[nsa-xss-protection-block]]
-* **xss-protection-block**
-When true and xss-protection-enabled is true, adds mode=block to the header.
-This indicates to the browser that the page should not be loaded at all.
-When false and xss-protection-enabled is true, the page will still be rendered when an reflected attack is detected but the response will be modified to protect against the attack.
-Note that there are sometimes ways of bypassing this mode which can often times make blocking the page more desirable.
+[[nsa-xss-protection-header-value]]
+* **xss-protection-header-value**
+Explicitly set the value for https://en.wikipedia.org/wiki/Cross-site_scripting#Non-Persistent[reflected / Type-1 Cross-Site Scripting (XSS)] header.
+One of: "0", "1", "1; mode=block". Defaults to "0".
 
 
 [[nsa-xss-protection-parents]]
@@ -774,13 +776,9 @@ It is highly recommended to leave CSRF protection enabled.
 The CsrfTokenRepository to use.
 The default is `HttpSessionCsrfTokenRepository`.
 
-[[nsa-csrf-request-attribute-handler-ref]]
-* **request-attribute-handler-ref**
-The optional `CsrfTokenRequestAttributeHandler` to use. The default is `CsrfTokenRequestProcessor`.
-
-[[nsa-csrf-request-resolver-ref]]
-* **request-resolver-ref**
-The optional `CsrfTokenRequestResolver` to use. The default is `CsrfTokenRequestProcessor`.
+[[nsa-csrf-request-handler-ref]]
+* **request-handler-ref**
+The optional `CsrfTokenRequestHandler` to use. The default is `CsrfTokenRequestAttributeHandler`.
 
 [[nsa-csrf-request-matcher-ref]]
 * **request-matcher-ref**
@@ -1324,11 +1322,21 @@ The Client Id to use for client authentication against the provided `introspecti
 * **client-secret**
 The Client Secret to use for client authentication against the provided `introspection-uri`.
 
+[[nsa-opaque-token-authentication-converter-ref]]
+* **authentication-converter-ref**
+Reference to an `OpaqueTokenAuthenticationConverter`. Responsible for converting successful introspection result into an `Authentication` instance.
+
 
 [[nsa-relying-party-registrations]]
 == <relying-party-registrations>
 The container element for relying party(ies) registered (xref:servlet/saml2/login/overview.adoc#servlet-saml2login-relyingpartyregistration[ClientRegistration]) with a SAML 2.0 Identity Provider.
 
+[[nsa-relying-party-registrations-attributes]]
+=== <relying-party-registrations> Attributes
+
+[[nsa-relying-party-registrations-id]]
+* **id**
+The ID that uniquely identifies the `RelyingPartyRegistrationRepository`.
 
 [[nsa-relying-party-registrations-children]]
 === Child Elements of <relying-party-registrations>
@@ -1647,7 +1655,7 @@ If an identical pattern is specified with and without a method, the method-speci
 [[nsa-intercept-url-pattern]]
 * **pattern**
 The pattern which defines the URL path.
-The content will depend on the `request-matcher` attribute from the containing http element, so will default to ant path syntax.
+The content will depend on the `request-matcher` attribute from the containing http element, so will default to MVC matcher if Spring MVC is in the classpath.
 
 
 [[nsa-intercept-url-request-matcher-ref]]
@@ -2160,6 +2168,9 @@ Allows injection of the ExpiredSessionStrategy instance used by the ConcurrentSe
 Maps to the `maximumSessions` property of `ConcurrentSessionControlAuthenticationStrategy`.
 Specify `-1` as the value to support unlimited sessions.
 
+[[nsa-concurrency-control-max-sessions-ref]]
+* **max-sessions-ref**
+Allows injection of the SessionLimit instance used by the ConcurrentSessionControlAuthenticationStrategy
 
 [[nsa-concurrency-control-session-registry-alias]]
 * **session-registry-alias**

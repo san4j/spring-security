@@ -55,7 +55,7 @@ import org.springframework.web.filter.GenericFilterBean;
 public class JaasApiIntegrationFilter extends GenericFilterBean {
 
 	private SecurityContextHolderStrategy securityContextHolderStrategy = SecurityContextHolder
-			.getContextHolderStrategy();
+		.getContextHolderStrategy();
 
 	private boolean createEmptySubject;
 
@@ -127,10 +127,9 @@ public class JaasApiIntegrationFilter extends GenericFilterBean {
 		if (!authentication.isAuthenticated()) {
 			return null;
 		}
-		if (!(authentication instanceof JaasAuthenticationToken)) {
+		if (!(authentication instanceof JaasAuthenticationToken token)) {
 			return null;
 		}
-		JaasAuthenticationToken token = (JaasAuthenticationToken) authentication;
 		LoginContext loginContext = token.getLoginContext();
 		if (loginContext == null) {
 			return null;

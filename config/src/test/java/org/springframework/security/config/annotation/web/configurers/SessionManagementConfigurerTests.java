@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2019 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,33 +16,51 @@
 
 package org.springframework.security.config.annotation.web.configurers;
 
+import java.io.IOException;
+
+import jakarta.servlet.DispatcherType;
+import jakarta.servlet.Filter;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletRequest;
+import jakarta.servlet.ServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Answers;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.mock.web.MockFilterChain;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.authentication.AuthenticationTrustResolver;
-import org.springframework.security.config.annotation.ObjectPostProcessor;
-import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
+import org.springframework.security.config.Customizer;
+import org.springframework.security.config.ObjectPostProcessor;
+import org.springframework.security.config.TestDeferredSecurityContext;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.config.test.SpringTestContext;
 import org.springframework.security.config.test.SpringTestContextExtension;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.session.SessionRegistry;
 import org.springframework.security.core.userdetails.PasswordEncodedUser;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.DefaultSecurityFilterChain;
+import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.session.ChangeSessionIdAuthenticationStrategy;
 import org.springframework.security.web.authentication.session.CompositeSessionAuthenticationStrategy;
 import org.springframework.security.web.authentication.session.ConcurrentSessionControlAuthenticationStrategy;
 import org.springframework.security.web.authentication.session.RegisterSessionAuthenticationStrategy;
+import org.springframework.security.web.authentication.session.SessionLimit;
+import org.springframework.security.web.context.RequestAttributeSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.security.web.savedrequest.RequestCache;
 import org.springframework.security.web.session.ConcurrentSessionFilter;
@@ -52,8 +70,10 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.WebUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -64,6 +84,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.withSettings;
 import static org.springframework.security.config.Customizer.withDefaults;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
@@ -101,9 +122,22 @@ public class SessionManagementConfigurerTests {
 	public void sessionManagementWhenConfiguredThenDoesNotOverrideSecurityContextRepository() throws Exception {
 		SessionManagementSecurityContextRepositoryConfig.SECURITY_CONTEXT_REPO = mock(SecurityContextRepository.class);
 		given(SessionManagementSecurityContextRepositoryConfig.SECURITY_CONTEXT_REPO
-				.loadContext(any(HttpServletRequest.class))).willReturn(() -> mock(SecurityContext.class));
+			.loadDeferredContext(any(HttpServletRequest.class)))
+			.willReturn(new TestDeferredSecurityContext(mock(SecurityContext.class), false));
 		this.spring.register(SessionManagementSecurityContextRepositoryConfig.class).autowire();
 		this.mvc.perform(get("/"));
+	}
+
+	@Test
+	public void sessionManagementWhenSecurityContextRepositoryIsConfiguredThenUseIt() throws Exception {
+		SessionManagementSecurityContextRepositoryConfig.SECURITY_CONTEXT_REPO = mock(SecurityContextRepository.class);
+		given(SessionManagementSecurityContextRepositoryConfig.SECURITY_CONTEXT_REPO
+			.loadDeferredContext(any(HttpServletRequest.class)))
+			.willReturn(new TestDeferredSecurityContext(mock(SecurityContext.class), false));
+		this.spring.register(SessionManagementSecurityContextRepositoryConfig.class).autowire();
+		this.mvc.perform(get("/"));
+		verify(SessionManagementSecurityContextRepositoryConfig.SECURITY_CONTEXT_REPO)
+			.containsContext(any(HttpServletRequest.class));
 	}
 
 	@Test
@@ -217,6 +251,82 @@ public class SessionManagementConfigurerTests {
 	}
 
 	@Test
+	public void loginWhenAdminUserLoggedInAndSessionLimitIsConfiguredThenLoginSuccessfully() throws Exception {
+		this.spring.register(ConcurrencyControlWithSessionLimitConfig.class).autowire();
+		// @formatter:off
+		MockHttpServletRequestBuilder requestBuilder = post("/login")
+				.with(csrf())
+				.param("username", "admin")
+				.param("password", "password");
+		HttpSession firstSession = this.mvc.perform(requestBuilder)
+				.andExpect(status().is3xxRedirection())
+				.andExpect(redirectedUrl("/"))
+				.andReturn()
+				.getRequest()
+				.getSession(false);
+		assertThat(firstSession).isNotNull();
+		HttpSession secondSession = this.mvc.perform(requestBuilder)
+				.andExpect(status().is3xxRedirection())
+				.andExpect(redirectedUrl("/"))
+				.andReturn()
+				.getRequest()
+				.getSession(false);
+		assertThat(secondSession).isNotNull();
+		// @formatter:on
+		assertThat(firstSession.getId()).isNotEqualTo(secondSession.getId());
+	}
+
+	@Test
+	public void loginWhenAdminUserLoggedInAndSessionLimitIsConfiguredThenLoginPrevented() throws Exception {
+		this.spring.register(ConcurrencyControlWithSessionLimitConfig.class).autowire();
+		// @formatter:off
+		MockHttpServletRequestBuilder requestBuilder = post("/login")
+				.with(csrf())
+				.param("username", "admin")
+				.param("password", "password");
+		HttpSession firstSession = this.mvc.perform(requestBuilder)
+				.andExpect(status().is3xxRedirection())
+				.andExpect(redirectedUrl("/"))
+				.andReturn()
+				.getRequest()
+				.getSession(false);
+		assertThat(firstSession).isNotNull();
+		HttpSession secondSession = this.mvc.perform(requestBuilder)
+				.andExpect(status().is3xxRedirection())
+				.andExpect(redirectedUrl("/"))
+				.andReturn()
+				.getRequest()
+				.getSession(false);
+		assertThat(secondSession).isNotNull();
+		assertThat(firstSession.getId()).isNotEqualTo(secondSession.getId());
+		this.mvc.perform(requestBuilder)
+				.andExpect(status().isFound())
+				.andExpect(redirectedUrl("/login?error"));
+		// @formatter:on
+	}
+
+	@Test
+	public void loginWhenUserLoggedInAndSessionLimitIsConfiguredThenLoginPrevented() throws Exception {
+		this.spring.register(ConcurrencyControlWithSessionLimitConfig.class).autowire();
+		// @formatter:off
+		MockHttpServletRequestBuilder requestBuilder = post("/login")
+				.with(csrf())
+				.param("username", "user")
+				.param("password", "password");
+		HttpSession firstSession = this.mvc.perform(requestBuilder)
+				.andExpect(status().is3xxRedirection())
+				.andExpect(redirectedUrl("/"))
+				.andReturn()
+				.getRequest()
+				.getSession(false);
+		assertThat(firstSession).isNotNull();
+		this.mvc.perform(requestBuilder)
+				.andExpect(status().isFound())
+				.andExpect(redirectedUrl("/login?error"));
+		// @formatter:on
+	}
+
+	@Test
 	public void requestWhenSessionCreationPolicyStateLessInLambdaThenNoSessionCreated() throws Exception {
 		this.spring.register(SessionCreationPolicyStateLessInLambdaConfig.class).autowire();
 		MvcResult mvcResult = this.mvc.perform(get("/")).andReturn();
@@ -243,7 +353,7 @@ public class SessionManagementConfigurerTests {
 		ObjectPostProcessorConfig.objectPostProcessor = spy(ReflectingObjectPostProcessor.class);
 		this.spring.register(ObjectPostProcessorConfig.class).autowire();
 		verify(ObjectPostProcessorConfig.objectPostProcessor)
-				.postProcess(any(ConcurrentSessionControlAuthenticationStrategy.class));
+			.postProcess(any(ConcurrentSessionControlAuthenticationStrategy.class));
 	}
 
 	@Test
@@ -251,7 +361,7 @@ public class SessionManagementConfigurerTests {
 		ObjectPostProcessorConfig.objectPostProcessor = spy(ReflectingObjectPostProcessor.class);
 		this.spring.register(ObjectPostProcessorConfig.class).autowire();
 		verify(ObjectPostProcessorConfig.objectPostProcessor)
-				.postProcess(any(CompositeSessionAuthenticationStrategy.class));
+			.postProcess(any(CompositeSessionAuthenticationStrategy.class));
 	}
 
 	@Test
@@ -259,7 +369,7 @@ public class SessionManagementConfigurerTests {
 		ObjectPostProcessorConfig.objectPostProcessor = spy(ReflectingObjectPostProcessor.class);
 		this.spring.register(ObjectPostProcessorConfig.class).autowire();
 		verify(ObjectPostProcessorConfig.objectPostProcessor)
-				.postProcess(any(RegisterSessionAuthenticationStrategy.class));
+			.postProcess(any(RegisterSessionAuthenticationStrategy.class));
 	}
 
 	@Test
@@ -267,13 +377,14 @@ public class SessionManagementConfigurerTests {
 		ObjectPostProcessorConfig.objectPostProcessor = spy(ReflectingObjectPostProcessor.class);
 		this.spring.register(ObjectPostProcessorConfig.class).autowire();
 		verify(ObjectPostProcessorConfig.objectPostProcessor)
-				.postProcess(any(ChangeSessionIdAuthenticationStrategy.class));
+			.postProcess(any(ChangeSessionIdAuthenticationStrategy.class));
 	}
 
 	@Test
 	public void getWhenAnonymousRequestAndTrustResolverSharedObjectReturnsAnonymousFalseThenSessionIsSaved()
 			throws Exception {
-		SharedTrustResolverConfig.TR = mock(AuthenticationTrustResolver.class);
+		SharedTrustResolverConfig.TR = mock(AuthenticationTrustResolver.class,
+				withSettings().defaultAnswer(Answers.CALLS_REAL_METHODS));
 		given(SharedTrustResolverConfig.TR.isAnonymous(any())).willReturn(false);
 		this.spring.register(SharedTrustResolverConfig.class).autowire();
 		MvcResult mvcResult = this.mvc.perform(get("/")).andReturn();
@@ -309,9 +420,7 @@ public class SessionManagementConfigurerTests {
 				HttpServletResponse responseToSpy = spy((HttpServletResponse) response);
 				chain.doFilter(request, responseToSpy);
 				verify(responseToSpy, atLeastOnce()).encodeRedirectURL(any());
-				verify(responseToSpy, atLeastOnce()).encodeRedirectUrl(any());
 				verify(responseToSpy, atLeastOnce()).encodeURL(any());
-				verify(responseToSpy, atLeastOnce()).encodeUrl(any());
 			})
 			.apply(springSecurity())
 			.build();
@@ -329,9 +438,7 @@ public class SessionManagementConfigurerTests {
 				HttpServletResponse responseToSpy = spy((HttpServletResponse) response);
 				chain.doFilter(request, responseToSpy);
 				verify(responseToSpy, never()).encodeRedirectURL(any());
-				verify(responseToSpy, never()).encodeRedirectUrl(any());
 				verify(responseToSpy, never()).encodeURL(any());
-				verify(responseToSpy, never()).encodeUrl(any());
 			})
 			.apply(springSecurity())
 			.build();
@@ -340,14 +447,108 @@ public class SessionManagementConfigurerTests {
 		this.mvc.perform(get("/")).andExpect(content().string("encoded"));
 	}
 
+	@Test
+	public void loginWhenSessionCreationPolicyStatelessThenSecurityContextIsAvailableInRequestAttributes()
+			throws Exception {
+		this.spring.register(HttpBasicSessionCreationPolicyStatelessConfig.class).autowire();
+		// @formatter:off
+		MvcResult mvcResult = this.mvc.perform(get("/").with(httpBasic("user", "password")))
+				.andExpect(status().isOk())
+				.andReturn();
+		// @formatter:on
+		HttpSession session = mvcResult.getRequest().getSession(false);
+		assertThat(session).isNull();
+		SecurityContext securityContext = (SecurityContext) mvcResult.getRequest()
+			.getAttribute(RequestAttributeSecurityContextRepository.DEFAULT_REQUEST_ATTR_NAME);
+		assertThat(securityContext).isNotNull();
+	}
+
+	/**
+	 * This ensures that if an ErrorDispatch occurs, then the SecurityContextRepository
+	 * defaulted by SessionManagementConfigurer is correct (looks at both Session and
+	 * Request Attributes).
+	 * @throws Exception
+	 */
+	@Test
+	public void gh12070WhenErrorDispatchSecurityContextRepositoryWorks() throws Exception {
+		Filter errorDispatchFilter = new Filter() {
+			@Override
+			public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
+					throws IOException, ServletException {
+				try {
+					chain.doFilter(request, response);
+				}
+				catch (ServletException ex) {
+					if (request.getDispatcherType() == DispatcherType.ERROR) {
+						throw ex;
+					}
+					MockHttpServletRequest httpRequest = WebUtils.getNativeRequest(request,
+							MockHttpServletRequest.class);
+					httpRequest.setDispatcherType(DispatcherType.ERROR);
+					// necessary to prevent HttpBasicFilter from invoking again
+					httpRequest.setAttribute(WebUtils.ERROR_REQUEST_URI_ATTRIBUTE, "/error");
+					httpRequest.setRequestURI("/error");
+					MockFilterChain mockChain = (MockFilterChain) chain;
+					mockChain.reset();
+					mockChain.doFilter(httpRequest, response);
+				}
+			}
+		};
+		this.spring.addFilter(errorDispatchFilter).register(Gh12070IssueConfig.class).autowire();
+
+		// @formatter:off
+		this.mvc.perform(get("/500").with(httpBasic("user", "password")))
+				.andExpect(status().isInternalServerError());
+		// @formatter:on
+	}
+
 	@Configuration
 	@EnableWebSecurity
-	static class SessionManagementRequestCacheConfig extends WebSecurityConfigurerAdapter {
+	static class Gh12070IssueConfig {
+
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+			// @formatter:off
+			http
+				.authorizeHttpRequests((authorize) -> authorize
+					.anyRequest().authenticated()
+				)
+				.httpBasic(Customizer.withDefaults())
+				.formLogin(Customizer.withDefaults());
+			return http.build();
+			// @formatter:on
+		}
+
+		@Bean
+		UserDetailsService userDetailsService() {
+			return new InMemoryUserDetailsManager(PasswordEncodedUser.user());
+		}
+
+		@RestController
+		static class ErrorController {
+
+			@GetMapping("/500")
+			String error() throws ServletException {
+				throw new ServletException("Error");
+			}
+
+			@GetMapping("/error")
+			ResponseEntity<String> errorHandler() {
+				return new ResponseEntity<>("error", HttpStatus.INTERNAL_SERVER_ERROR);
+			}
+
+		}
+
+	}
+
+	@Configuration
+	@EnableWebSecurity
+	static class SessionManagementRequestCacheConfig {
 
 		static RequestCache REQUEST_CACHE;
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.requestCache()
@@ -355,6 +556,7 @@ public class SessionManagementConfigurerTests {
 					.and()
 				.sessionManagement()
 					.sessionCreationPolicy(SessionCreationPolicy.STATELESS);
+			return http.build();
 			// @formatter:on
 		}
 
@@ -362,12 +564,12 @@ public class SessionManagementConfigurerTests {
 
 	@Configuration
 	@EnableWebSecurity
-	static class SessionManagementSecurityContextRepositoryConfig extends WebSecurityConfigurerAdapter {
+	static class SessionManagementSecurityContextRepositoryConfig {
 
 		static SecurityContextRepository SECURITY_CONTEXT_REPO;
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.securityContext()
@@ -375,6 +577,7 @@ public class SessionManagementConfigurerTests {
 					.and()
 				.sessionManagement()
 					.sessionCreationPolicy(SessionCreationPolicy.STATELESS);
+			return http.build();
 			// @formatter:on
 		}
 
@@ -382,16 +585,17 @@ public class SessionManagementConfigurerTests {
 
 	@Configuration
 	@EnableWebSecurity
-	static class InvokeTwiceDoesNotOverride extends WebSecurityConfigurerAdapter {
+	static class InvokeTwiceDoesNotOverride {
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.sessionManagement()
 					.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
 					.and()
 				.sessionManagement();
+			return http.build();
 			// @formatter:on
 		}
 
@@ -399,10 +603,10 @@ public class SessionManagementConfigurerTests {
 
 	@Configuration
 	@EnableWebSecurity
-	static class DisableSessionFixationEnableConcurrencyControlConfig extends WebSecurityConfigurerAdapter {
+	static class DisableSessionFixationEnableConcurrencyControlConfig {
 
-		@Override
-		public void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.httpBasic()
@@ -411,54 +615,47 @@ public class SessionManagementConfigurerTests {
 					.sessionFixation().none()
 					.maximumSessions(1);
 			// @formatter:on
+			return http.build();
 		}
 
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
-			// @formatter:off
-			auth
-				.inMemoryAuthentication()
-					.withUser(PasswordEncodedUser.user());
-			// @formatter:on
+		@Bean
+		UserDetailsService userDetailsService() {
+			return new InMemoryUserDetailsManager(PasswordEncodedUser.user());
 		}
 
 	}
 
 	@Configuration
 	@EnableWebSecurity
-	static class SFPNewSessionInLambdaConfig extends WebSecurityConfigurerAdapter {
+	static class SFPNewSessionInLambdaConfig {
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.sessionManagement((sessionManagement) ->
 					sessionManagement
-						.sessionFixation((sessionFixation) ->
-							sessionFixation.newSession()
-						)
+						.requireExplicitAuthenticationStrategy(false)
+						.sessionFixation(SessionManagementConfigurer.SessionFixationConfigurer::newSession)
 				)
 				.httpBasic(withDefaults());
 			// @formatter:on
+			return http.build();
 		}
 
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
-			// @formatter:off
-			auth
-				.inMemoryAuthentication()
-					.withUser(PasswordEncodedUser.user());
-			// @formatter:on
+		@Bean
+		UserDetailsService userDetailsService() {
+			return new InMemoryUserDetailsManager(PasswordEncodedUser.user());
 		}
 
 	}
 
 	@Configuration
 	@EnableWebSecurity
-	static class ConcurrencyControlConfig extends WebSecurityConfigurerAdapter {
+	static class ConcurrencyControlConfig {
 
-		@Override
-		public void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.formLogin()
@@ -467,25 +664,22 @@ public class SessionManagementConfigurerTests {
 					.maximumSessions(1)
 					.maxSessionsPreventsLogin(true);
 			// @formatter:on
+			return http.build();
 		}
 
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
-			// @formatter:off
-			auth
-				.inMemoryAuthentication()
-					.withUser(PasswordEncodedUser.user());
-			// @formatter:on
+		@Bean
+		UserDetailsService userDetailsService() {
+			return new InMemoryUserDetailsManager(PasswordEncodedUser.user());
 		}
 
 	}
 
 	@Configuration
 	@EnableWebSecurity
-	static class ConcurrencyControlInLambdaConfig extends WebSecurityConfigurerAdapter {
+	static class ConcurrencyControlInLambdaConfig {
 
-		@Override
-		public void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.formLogin(withDefaults())
@@ -498,31 +692,65 @@ public class SessionManagementConfigurerTests {
 						)
 				);
 			// @formatter:on
+			return http.build();
 		}
 
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
-			// @formatter:off
-			auth
-				.inMemoryAuthentication()
-					.withUser(PasswordEncodedUser.user());
-			// @formatter:on
+		@Bean
+		UserDetailsService userDetailsService() {
+			return new InMemoryUserDetailsManager(PasswordEncodedUser.user());
 		}
 
 	}
 
 	@Configuration
 	@EnableWebSecurity
-	static class SessionCreationPolicyStateLessInLambdaConfig extends WebSecurityConfigurerAdapter {
+	static class ConcurrencyControlWithSessionLimitConfig {
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http, SessionLimit sessionLimit) throws Exception {
+			// @formatter:off
+			http
+					.formLogin(withDefaults())
+					.sessionManagement((sessionManagement) -> sessionManagement
+									.sessionConcurrency((sessionConcurrency) -> sessionConcurrency
+													.maximumSessions(sessionLimit)
+													.maxSessionsPreventsLogin(true)
+									)
+					);
+			// @formatter:on
+			return http.build();
+		}
+
+		@Bean
+		UserDetailsService userDetailsService() {
+			return new InMemoryUserDetailsManager(PasswordEncodedUser.admin(), PasswordEncodedUser.user());
+		}
+
+		@Bean
+		SessionLimit SessionLimit() {
+			return (authentication) -> {
+				if ("admin".equals(authentication.getName())) {
+					return 2;
+				}
+				return 1;
+			};
+		}
+
+	}
+
+	@Configuration
+	@EnableWebSecurity
+	static class SessionCreationPolicyStateLessInLambdaConfig {
+
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.sessionManagement((sessionManagement) ->
 					sessionManagement
 						.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
 				);
+			return http.build();
 			// @formatter:on
 		}
 
@@ -530,16 +758,17 @@ public class SessionManagementConfigurerTests {
 
 	@Configuration
 	@EnableWebSecurity
-	static class ObjectPostProcessorConfig extends WebSecurityConfigurerAdapter {
+	static class ObjectPostProcessorConfig {
 
 		static ObjectPostProcessor<Object> objectPostProcessor;
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.sessionManagement()
 					.maximumSessions(1);
+			return http.build();
 			// @formatter:on
 		}
 
@@ -561,15 +790,19 @@ public class SessionManagementConfigurerTests {
 
 	@Configuration
 	@EnableWebSecurity
-	static class SharedTrustResolverConfig extends WebSecurityConfigurerAdapter {
+	static class SharedTrustResolverConfig {
 
 		static AuthenticationTrustResolver TR;
 
-		@Override
-		protected void configure(HttpSecurity http) {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
+				.sessionManagement((sessions) -> sessions
+					.requireExplicitAuthenticationStrategy(false)
+				)
 				.setSharedObject(AuthenticationTrustResolver.class, TR);
+			return http.build();
 			// @formatter:on
 		}
 
@@ -577,16 +810,17 @@ public class SessionManagementConfigurerTests {
 
 	@Configuration
 	@EnableWebSecurity
-	static class SessionRegistryOneBeanConfig extends WebSecurityConfigurerAdapter {
+	static class SessionRegistryOneBeanConfig {
 
 		private static SessionRegistry SESSION_REGISTRY;
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.sessionManagement()
 				.maximumSessions(1);
+			return http.build();
 			// @formatter:on
 		}
 
@@ -599,18 +833,19 @@ public class SessionManagementConfigurerTests {
 
 	@Configuration
 	@EnableWebSecurity
-	static class SessionRegistryTwoBeansConfig extends WebSecurityConfigurerAdapter {
+	static class SessionRegistryTwoBeansConfig {
 
 		private static SessionRegistry SESSION_REGISTRY_ONE;
 
 		private static SessionRegistry SESSION_REGISTRY_TWO;
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.sessionManagement()
 				.maximumSessions(1);
+			return http.build();
 			// @formatter:on
 		}
 
@@ -659,15 +894,42 @@ public class SessionManagementConfigurerTests {
 
 	}
 
+	@Configuration
+	@EnableWebSecurity
+	static class HttpBasicSessionCreationPolicyStatelessConfig {
+
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+			// @formatter:off
+			http
+				.sessionManagement((sessionManagement) ->
+					sessionManagement
+						.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+				)
+				.httpBasic(withDefaults());
+			// @formatter:on
+			return http.build();
+		}
+
+		@Bean
+		UserDetailsService userDetailsService() {
+			return new InMemoryUserDetailsManager(PasswordEncodedUser.user());
+		}
+
+		@Bean
+		EncodesUrls encodesUrls() {
+			return new EncodesUrls();
+		}
+
+	}
+
 	@RestController
 	static class EncodesUrls {
 
 		@RequestMapping("/")
 		String encoded(HttpServletResponse response) {
 			response.encodeURL("/foo");
-			response.encodeUrl("/foo");
 			response.encodeRedirectURL("/foo");
-			response.encodeRedirectUrl("/foo");
 			return "encoded";
 		}
 

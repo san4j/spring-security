@@ -24,6 +24,7 @@ import java.security.interfaces.RSAPublicKey;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.RSAPublicKeySpec;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -50,25 +51,30 @@ import org.springframework.core.convert.converter.Converter;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.ReactiveAuthenticationManager;
 import org.springframework.security.authentication.ReactiveAuthenticationManagerResolver;
+import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.test.SpringTestContext;
 import org.springframework.security.config.test.SpringTestContextExtension;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.core.OAuth2AuthenticatedPrincipal;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.security.oauth2.jwt.TestJwts;
-import org.springframework.security.oauth2.server.resource.BearerTokenAuthenticationToken;
+import org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.ReactiveJwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.ReactiveJwtAuthenticationConverterAdapter;
+import org.springframework.security.oauth2.server.resource.introspection.ReactiveOpaqueTokenAuthenticationConverter;
 import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.security.web.server.authentication.HttpStatusServerEntryPoint;
 import org.springframework.security.web.server.authentication.ServerAuthenticationConverter;
+import org.springframework.security.web.server.authentication.ServerAuthenticationFailureHandler;
 import org.springframework.security.web.server.authorization.HttpStatusServerAccessDeniedHandler;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -289,9 +295,9 @@ public class OAuth2ResourceServerSpecTests {
 	public void getWhenUsingCustomAuthenticationManagerThenUsesItAccordingly() {
 		this.spring.register(CustomAuthenticationManagerConfig.class).autowire();
 		ReactiveAuthenticationManager authenticationManager = this.spring.getContext()
-				.getBean(ReactiveAuthenticationManager.class);
+			.getBean(ReactiveAuthenticationManager.class);
 		given(authenticationManager.authenticate(any(Authentication.class)))
-				.willReturn(Mono.error(new OAuth2AuthenticationException(new OAuth2Error("mock-failure"))));
+			.willReturn(Mono.error(new OAuth2AuthenticationException(new OAuth2Error("mock-failure"))));
 		// @formatter:off
 		this.client.get()
 				.headers((headers) -> headers
@@ -307,9 +313,9 @@ public class OAuth2ResourceServerSpecTests {
 	public void getWhenUsingCustomAuthenticationManagerInLambdaThenUsesItAccordingly() {
 		this.spring.register(CustomAuthenticationManagerInLambdaConfig.class).autowire();
 		ReactiveAuthenticationManager authenticationManager = this.spring.getContext()
-				.getBean(ReactiveAuthenticationManager.class);
+			.getBean(ReactiveAuthenticationManager.class);
 		given(authenticationManager.authenticate(any(Authentication.class)))
-				.willReturn(Mono.error(new OAuth2AuthenticationException(new OAuth2Error("mock-failure"))));
+			.willReturn(Mono.error(new OAuth2AuthenticationException(new OAuth2Error("mock-failure"))));
 		// @formatter:off
 		this.client.get()
 				.headers((headers) -> headers
@@ -325,13 +331,14 @@ public class OAuth2ResourceServerSpecTests {
 	public void getWhenUsingCustomAuthenticationManagerResolverThenUsesItAccordingly() {
 		this.spring.register(CustomAuthenticationManagerResolverConfig.class).autowire();
 		ReactiveAuthenticationManagerResolver<ServerWebExchange> authenticationManagerResolver = this.spring
-				.getContext().getBean(ReactiveAuthenticationManagerResolver.class);
+			.getContext()
+			.getBean(ReactiveAuthenticationManagerResolver.class);
 		ReactiveAuthenticationManager authenticationManager = this.spring.getContext()
-				.getBean(ReactiveAuthenticationManager.class);
+			.getBean(ReactiveAuthenticationManager.class);
 		given(authenticationManagerResolver.resolve(any(ServerWebExchange.class)))
-				.willReturn(Mono.just(authenticationManager));
+			.willReturn(Mono.just(authenticationManager));
 		given(authenticationManager.authenticate(any(Authentication.class)))
-				.willReturn(Mono.error(new OAuth2AuthenticationException(new OAuth2Error("mock-failure"))));
+			.willReturn(Mono.error(new OAuth2AuthenticationException(new OAuth2Error("mock-failure"))));
 		// @formatter:off
 		this.client.get()
 				.headers((headers) -> headers
@@ -341,6 +348,25 @@ public class OAuth2ResourceServerSpecTests {
 				.expectStatus().isUnauthorized()
 				.expectHeader().value(HttpHeaders.WWW_AUTHENTICATE, startsWith("Bearer error=\"mock-failure\""));
 		// @formatter:on
+	}
+
+	@Test
+	public void getWhenUsingCustomAuthenticationFailureHandlerThenUsesIsAccordingly() {
+		this.spring.register(CustomAuthenticationFailureHandlerConfig.class).autowire();
+		ServerAuthenticationFailureHandler handler = this.spring.getContext()
+			.getBean(ServerAuthenticationFailureHandler.class);
+		ReactiveAuthenticationManager authenticationManager = this.spring.getContext()
+			.getBean(ReactiveAuthenticationManager.class);
+		given(authenticationManager.authenticate(any()))
+			.willReturn(Mono.error(() -> new BadCredentialsException("bad")));
+		given(handler.onAuthenticationFailure(any(), any())).willReturn(Mono.empty());
+		// @formatter:off
+		this.client.get()
+				.headers((headers) -> headers.setBearerAuth(this.messageReadToken))
+				.exchange()
+				.expectStatus().isOk();
+		// @formatter:on
+		verify(handler).onAuthenticationFailure(any(), any());
 	}
 
 	@Test
@@ -532,8 +558,9 @@ public class OAuth2ResourceServerSpecTests {
 	@Test
 	public void introspectWhenValidThenReturnsOk() {
 		this.spring.register(IntrospectionConfig.class, RootController.class).autowire();
-		this.spring.getContext().getBean(MockWebServer.class)
-				.setDispatcher(requiresAuth(this.clientId, this.clientSecret, this.active));
+		this.spring.getContext()
+			.getBean(MockWebServer.class)
+			.setDispatcher(requiresAuth(this.clientId, this.clientSecret, this.active));
 		// @formatter:off
 		this.client.get()
 				.headers((headers) -> headers
@@ -547,8 +574,9 @@ public class OAuth2ResourceServerSpecTests {
 	@Test
 	public void introspectWhenValidAndIntrospectionInLambdaThenReturnsOk() {
 		this.spring.register(IntrospectionInLambdaConfig.class, RootController.class).autowire();
-		this.spring.getContext().getBean(MockWebServer.class)
-				.setDispatcher(requiresAuth(this.clientId, this.clientSecret, this.active));
+		this.spring.getContext()
+			.getBean(MockWebServer.class)
+			.setDispatcher(requiresAuth(this.clientId, this.clientSecret, this.active));
 		// @formatter:off
 		this.client.get()
 				.headers((headers) -> headers
@@ -562,8 +590,28 @@ public class OAuth2ResourceServerSpecTests {
 	@Test
 	public void configureWhenUsingBothAuthenticationManagerResolverAndOpaqueThenWiringException() {
 		assertThatExceptionOfType(BeanCreationException.class)
-				.isThrownBy(() -> this.spring.register(AuthenticationManagerResolverPlusOtherConfig.class).autowire())
-				.withMessageContaining("authenticationManagerResolver");
+			.isThrownBy(() -> this.spring.register(AuthenticationManagerResolverPlusOtherConfig.class).autowire())
+			.withMessageContaining("authenticationManagerResolver");
+	}
+
+	@Test
+	public void getWhenCustomAuthenticationConverterThenConverts() {
+		this.spring.register(ReactiveOpaqueTokenAuthenticationConverterConfig.class, RootController.class).autowire();
+		this.spring.getContext()
+			.getBean(MockWebServer.class)
+			.setDispatcher(requiresAuth(this.clientId, this.clientSecret, this.active));
+		ReactiveOpaqueTokenAuthenticationConverter authenticationConverter = this.spring.getContext()
+			.getBean(ReactiveOpaqueTokenAuthenticationConverter.class);
+		given(authenticationConverter.convert(anyString(), any(OAuth2AuthenticatedPrincipal.class)))
+			.willReturn(Mono.just(new TestingAuthenticationToken("jdoe", null, Collections.emptyList())));
+		// @formatter:off
+		this.client.get()
+				.headers((headers) -> headers
+						.setBearerAuth(this.messageReadToken)
+				)
+				.exchange()
+				.expectStatus().isOk();
+		// @formatter:on
 	}
 
 	private static Dispatcher requiresAuth(String username, String password, String response) {
@@ -587,8 +635,8 @@ public class OAuth2ResourceServerSpecTests {
 	}
 
 	private static MockResponse ok(String response) {
-		return new MockResponse().setBody(response).setHeader(org.springframework.http.HttpHeaders.CONTENT_TYPE,
-				MediaType.APPLICATION_JSON_VALUE);
+		return new MockResponse().setBody(response)
+			.setHeader(org.springframework.http.HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE);
 	}
 
 	private static MockResponse unauthorized() {
@@ -882,6 +930,35 @@ public class OAuth2ResourceServerSpecTests {
 	@Configuration
 	@EnableWebFlux
 	@EnableWebFluxSecurity
+	static class CustomAuthenticationFailureHandlerConfig {
+
+		@Bean
+		SecurityWebFilterChain springSecurity(ServerHttpSecurity http) {
+			// @formatter:off
+			http
+				.authorizeExchange((authorize) -> authorize.anyExchange().authenticated())
+				.oauth2ResourceServer((oauth2) -> oauth2
+					.authenticationFailureHandler(authenticationFailureHandler())
+					.jwt((jwt) -> jwt.authenticationManager(authenticationManager()))
+				);
+			// @formatter:on
+			return http.build();
+		}
+
+		@Bean
+		ReactiveAuthenticationManager authenticationManager() {
+			return mock(ReactiveAuthenticationManager.class);
+		}
+
+		@Bean
+		ServerAuthenticationFailureHandler authenticationFailureHandler() {
+			return mock(ServerAuthenticationFailureHandler.class);
+		}
+
+	}
+
+	@EnableWebFlux
+	@EnableWebFluxSecurity
 	static class CustomBearerTokenServerAuthenticationConverter {
 
 		@Bean
@@ -902,7 +979,7 @@ public class OAuth2ResourceServerSpecTests {
 		@Bean
 		ServerAuthenticationConverter bearerTokenAuthenticationConverter() {
 			return (exchange) -> Mono.justOrEmpty(exchange.getRequest().getCookies().getFirst("TOKEN").getValue())
-					.map(BearerTokenAuthenticationToken::new);
+				.map(BearerTokenAuthenticationToken::new);
 		}
 
 	}
@@ -1048,6 +1125,44 @@ public class OAuth2ResourceServerSpecTests {
 					.opaqueToken();
 			// @formatter:on
 			return http.build();
+		}
+
+	}
+
+	@Configuration
+	@EnableWebFlux
+	@EnableWebFluxSecurity
+	static class ReactiveOpaqueTokenAuthenticationConverterConfig {
+
+		private MockWebServer mockWebServer = new MockWebServer();
+
+		@Bean
+		SecurityWebFilterChain springSecurity(ServerHttpSecurity http) {
+			String introspectionUri = mockWebServer().url("/introspect").toString();
+			// @formatter:off
+			http
+				.oauth2ResourceServer()
+					.opaqueToken()
+						.introspectionUri(introspectionUri)
+						.introspectionClientCredentials("client", "secret")
+						.authenticationConverter(authenticationConverter());
+			// @formatter:on
+			return http.build();
+		}
+
+		@Bean
+		ReactiveOpaqueTokenAuthenticationConverter authenticationConverter() {
+			return mock(ReactiveOpaqueTokenAuthenticationConverter.class);
+		}
+
+		@Bean
+		MockWebServer mockWebServer() {
+			return this.mockWebServer;
+		}
+
+		@PreDestroy
+		void shutdown() throws IOException {
+			this.mockWebServer.shutdown();
 		}
 
 	}

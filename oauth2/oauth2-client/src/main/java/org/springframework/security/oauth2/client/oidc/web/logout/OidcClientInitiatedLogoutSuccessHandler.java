@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,11 +42,10 @@ import org.springframework.web.util.UriComponentsBuilder;
  * @author Josh Cummings
  * @since 5.2
  * @see <a href=
- * "https://openid.net/specs/openid-connect-session-1_0.html#RPLogout">RP-Initiated
- * Logout</a>
+ * "https://openid.net/specs/openid-connect-rpinitiated-1_0.html">RP-Initiated Logout</a>
  * @see org.springframework.security.web.authentication.logout.LogoutSuccessHandler
  */
-public final class OidcClientInitiatedLogoutSuccessHandler extends SimpleUrlLogoutSuccessHandler {
+public class OidcClientInitiatedLogoutSuccessHandler extends SimpleUrlLogoutSuccessHandler {
 
 	private final ClientRegistrationRepository clientRegistrationRepository;
 
@@ -64,7 +63,7 @@ public final class OidcClientInitiatedLogoutSuccessHandler extends SimpleUrlLogo
 		if (authentication instanceof OAuth2AuthenticationToken && authentication.getPrincipal() instanceof OidcUser) {
 			String registrationId = ((OAuth2AuthenticationToken) authentication).getAuthorizedClientRegistrationId();
 			ClientRegistration clientRegistration = this.clientRegistrationRepository
-					.findByRegistrationId(registrationId);
+				.findByRegistrationId(registrationId);
 			URI endSessionEndpoint = this.endSessionEndpoint(clientRegistration);
 			if (endSessionEndpoint != null) {
 				String idToken = idToken(authentication);

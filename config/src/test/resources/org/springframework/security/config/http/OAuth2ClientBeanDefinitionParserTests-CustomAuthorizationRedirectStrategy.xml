@@ -29,11 +29,12 @@
 			<authorization-code-grant
 					authorization-redirect-strategy-ref="authorizationRedirectStrategy"/>
 		</oauth2-client>
+		<intercept-url pattern="/**" access="authenticated"/>
 	</http>
 
 	<b:bean id="authorizationRedirectStrategy" class="org.mockito.Mockito" factory-method="mock">
-		<b:constructor-arg value="org.springframework.security.web.RedirectStrategy"/>
-	</b:bean>
+    <b:constructor-arg value="org.springframework.security.web.RedirectStrategy" type="java.lang.Class"/>
+</b:bean>
 
 	<client-registrations>
 		<client-registration registration-id="google"

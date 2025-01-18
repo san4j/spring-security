@@ -23,8 +23,10 @@ These claims are normally represented by a JSON object that contains a collectio
 The following code shows the complete configuration options available for the `oauth2Login()` DSL:
 
 .OAuth2 Login Configuration Options
-====
-.Java
+[tabs]
+======
+Java::
++
 [source,java,role="primary"]
 ----
 @Configuration
@@ -53,7 +55,8 @@ public class OAuth2LoginSecurityConfig {
 }
 ----
 
-.Kotlin
+Kotlin::
++
 [source,kotlin,role="secondary"]
 ----
 @Configuration
@@ -82,7 +85,7 @@ class OAuth2LoginSecurityConfig {
     }
 }
 ----
-====
+======
 
 The following sections go into more detail on each of the configuration options available:
 
@@ -119,8 +122,10 @@ To override the default login page, configure the `exceptionHandling().authentic
 The following listing shows an example:
 
 .OAuth2 Login Page Configuration
-====
-.Java
+[tabs]
+======
+Java::
++
 [source,java,role="primary",subs="-attributes"]
 ----
 @Configuration
@@ -153,7 +158,8 @@ public class OAuth2LoginSecurityConfig {
 }
 ----
 
-.Kotlin
+Kotlin::
++
 [source,kotlin,role="secondary",subs="-attributes"]
 ----
 @Configuration
@@ -187,7 +193,7 @@ class OAuth2LoginSecurityConfig {
     ...
 }
 ----
-====
+======
 
 [IMPORTANT]
 You need to provide a `@Controller` with a `@RequestMapping("/login/oauth2")` that is capable of rendering the custom login page.
@@ -220,8 +226,10 @@ The default Authorization Response redirection endpoint is `+/login/oauth2/code/
 If you would like to customize the Authorization Response redirection endpoint, configure it as shown in the following example:
 
 .Redirection Endpoint Configuration
-====
-.Java
+[tabs]
+======
+Java::
++
 [source,java,role="primary",subs="-attributes"]
 ----
 @Configuration
@@ -240,7 +248,8 @@ public class OAuth2LoginSecurityConfig {
 }
 ----
 
-.Kotlin
+Kotlin::
++
 [source,kotlin,role="secondary",subs="-attributes"]
 ----
 @Configuration
@@ -259,7 +268,7 @@ class OAuth2LoginSecurityConfig {
     }
 }
 ----
-====
+======
 
 [IMPORTANT]
 ====
@@ -267,7 +276,10 @@ You also need to ensure the `ClientRegistration.redirectUri` matches the custom 
 
 The following listing shows an example:
 
-.Java
+[tabs]
+======
+Java::
++
 [source,java,role="primary",subs="-attributes"]
 ----
 return CommonOAuth2Provider.GOOGLE.getBuilder("google")
@@ -277,7 +289,8 @@ return CommonOAuth2Provider.GOOGLE.getBuilder("google")
 	.build();
 ----
 
-.Kotlin
+Kotlin::
++
 [source,kotlin,role="secondary",subs="-attributes"]
 ----
 return CommonOAuth2Provider.GOOGLE.getBuilder("google")
@@ -286,6 +299,7 @@ return CommonOAuth2Provider.GOOGLE.getBuilder("google")
     .redirectUri("{baseUrl}/login/oauth2/callback/{registrationId}")
     .build()
 ----
+======
 ====
 
 
@@ -302,7 +316,8 @@ The UserInfo Endpoint includes a number of configuration options, as described i
 [[webflux-oauth2-login-advanced-map-authorities]]
 === Mapping User Authorities
 
-After the user successfully authenticates with the OAuth 2.0 Provider, the `OAuth2User.getAuthorities()` (or `OidcUser.getAuthorities()`) may be mapped to a new set of `GrantedAuthority` instances, which will be supplied to `OAuth2AuthenticationToken` when completing the authentication.
+After the user successfully authenticates with the OAuth 2.0 Provider, the `OAuth2User.getAuthorities()` (or `OidcUser.getAuthorities()`) contains a list of granted authorities populated from `OAuth2UserRequest.getAccessToken().getScopes()` and prefixed with `SCOPE_`.
+These granted authorities may be mapped to a new set of `GrantedAuthority` instances, which will be supplied to `OAuth2AuthenticationToken` when completing the authentication.
 
 [TIP]
 `OAuth2AuthenticationToken.getAuthorities()` is used for authorizing requests, such as in `hasRole('USER')` or `hasRole('ADMIN')`.
@@ -316,11 +331,15 @@ There are a couple of options to choose from when mapping user authorities:
 [[webflux-oauth2-login-advanced-map-authorities-grantedauthoritiesmapper]]
 ==== Using a GrantedAuthoritiesMapper
 
+The `GrantedAuthoritiesMapper` is given a list of granted authorities which contains a special authority of type `OAuth2UserAuthority` and the authority string `OAUTH2_USER` (or `OidcUserAuthority` and the authority string `OIDC_USER`).
+
 Register a `GrantedAuthoritiesMapper` `@Bean` to have it automatically applied to the configuration, as shown in the following example:
 
 .Granted Authorities Mapper Configuration
-====
-.Java
+[tabs]
+======
+Java::
++
 [source,java,role="primary"]
 ----
 @Configuration
@@ -368,7 +387,8 @@ public class OAuth2LoginSecurityConfig {
 }
 ----
 
-.Kotlin
+Kotlin::
++
 [source,kotlin,role="secondary"]
 ----
 @Configuration
@@ -405,7 +425,7 @@ class OAuth2LoginSecurityConfig {
     }
 }
 ----
-====
+======
 
 [[webflux-oauth2-login-advanced-map-authorities-reactiveoauth2userservice]]
 ==== Delegation-based strategy with ReactiveOAuth2UserService
@@ -417,8 +437,10 @@ The `OAuth2UserRequest` (and `OidcUserRequest`) provides you access to the assoc
 The following example shows how to implement and configure a delegation-based strategy using an OpenID Connect 1.0 UserService:
 
 .ReactiveOAuth2UserService Configuration
-====
-.Java
+[tabs]
+======
+Java::
++
 [source,java,role="primary"]
 ----
 @Configuration
@@ -450,7 +472,13 @@ public class OAuth2LoginSecurityConfig {
 						// 2) Map the authority information to one or more GrantedAuthority's and add it to mappedAuthorities
 
 						// 3) Create a copy of oidcUser but use the mappedAuthorities instead
-						oidcUser = new DefaultOidcUser(mappedAuthorities, oidcUser.getIdToken(), oidcUser.getUserInfo());
+						ProviderDetails providerDetails = userRequest.getClientRegistration().getProviderDetails();
+						String userNameAttributeName = providerDetails.getUserInfoEndpoint().getUserNameAttributeName();
+						if (StringUtils.hasText(userNameAttributeName)) {
+							oidcUser = new DefaultOidcUser(mappedAuthorities, oidcUser.getIdToken(), oidcUser.getUserInfo(), userNameAttributeName);
+						} else {
+							oidcUser = new DefaultOidcUser(mappedAuthorities, oidcUser.getIdToken(), oidcUser.getUserInfo());
+						}
 
 						return Mono.just(oidcUser);
 					});
@@ -459,7 +487,8 @@ public class OAuth2LoginSecurityConfig {
 }
 ----
 
-.Kotlin
+Kotlin::
++
 [source,kotlin,role="secondary"]
 ----
 @Configuration
@@ -490,7 +519,13 @@ class OAuth2LoginSecurityConfig {
                     // 1) Fetch the authority information from the protected resource using accessToken
                     // 2) Map the authority information to one or more GrantedAuthority's and add it to mappedAuthorities
                     // 3) Create a copy of oidcUser but use the mappedAuthorities instead
-                    val mappedOidcUser = DefaultOidcUser(mappedAuthorities, oidcUser.idToken, oidcUser.userInfo)
+                    val providerDetails = userRequest.getClientRegistration().getProviderDetails()
+                    val userNameAttributeName = providerDetails.getUserInfoEndpoint().getUserNameAttributeName()
+                    val mappedOidcUser = if (StringUtils.hasText(userNameAttributeName)) {
+                        DefaultOidcUser(mappedAuthorities, oidcUser.idToken, oidcUser.userInfo, userNameAttributeName)
+                    } else {
+                        DefaultOidcUser(mappedAuthorities, oidcUser.idToken, oidcUser.userInfo)
+                    }
 
                     Mono.just(mappedOidcUser)
                 }
@@ -498,7 +533,7 @@ class OAuth2LoginSecurityConfig {
     }
 }
 ----
-====
+======
 
 
 [[webflux-oauth2-login-advanced-oauth2-user-service]]
@@ -515,8 +550,10 @@ If you need to customize the pre-processing of the UserInfo Request and/or the p
 
 Whether you customize `DefaultReactiveOAuth2UserService` or provide your own implementation of `ReactiveOAuth2UserService`, you'll need to configure it as shown in the following example:
 
-====
-.Java
+[tabs]
+======
+Java::
++
 [source,java,role="primary"]
 ----
 @Configuration
@@ -539,7 +576,8 @@ public class OAuth2LoginSecurityConfig {
 }
 ----
 
-.Kotlin
+Kotlin::
++
 [source,kotlin,role="secondary"]
 ----
 @Configuration
@@ -561,7 +599,7 @@ class OAuth2LoginSecurityConfig {
     }
 }
 ----
-====
+======
 
 
 [[webflux-oauth2-login-advanced-oidc-user-service]]
@@ -575,8 +613,10 @@ If you need to customize the pre-processing of the UserInfo Request and/or the p
 
 Whether you customize `OidcReactiveOAuth2UserService` or provide your own implementation of `ReactiveOAuth2UserService` for OpenID Connect 1.0 Provider's, you'll need to configure it as shown in the following example:
 
-====
-.Java
+[tabs]
+======
+Java::
++
 [source,java,role="primary"]
 ----
 @Configuration
@@ -599,7 +639,8 @@ public class OAuth2LoginSecurityConfig {
 }
 ----
 
-.Kotlin
+Kotlin::
++
 [source,kotlin,role="secondary"]
 ----
 @Configuration
@@ -621,7 +662,7 @@ class OAuth2LoginSecurityConfig {
     }
 }
 ----
-====
+======
 
 
 [[webflux-oauth2-login-advanced-idtoken-verify]]
@@ -638,8 +679,10 @@ The JWS algorithm resolver is a `Function` that accepts a `ClientRegistration` a
 
 The following code shows how to configure the `OidcIdTokenDecoderFactory` `@Bean` to default to `MacAlgorithm.HS256` for all `ClientRegistration`:
 
-====
-.Java
+[tabs]
+======
+Java::
++
 [source,java,role="primary"]
 ----
 @Bean
@@ -650,7 +693,8 @@ public ReactiveJwtDecoderFactory<ClientRegistration> idTokenDecoderFactory() {
 }
 ----
 
-.Kotlin
+Kotlin::
++
 [source,kotlin,role="secondary"]
 ----
 @Bean
@@ -660,7 +704,7 @@ fun idTokenDecoderFactory(): ReactiveJwtDecoderFactory<ClientRegistration> {
     return idTokenDecoderFactory
 }
 ----
-====
+======
 
 [NOTE]
 For MAC based algorithms such as `HS256`, `HS384` or `HS512`, the `client-secret` corresponding to the `client-id` is used as the symmetric key for signature verification.
@@ -668,108 +712,5 @@ For MAC based algorithms such as `HS256`, `HS384` or `HS512`, the `client-secret
 [TIP]
 If more than one `ClientRegistration` is configured for OpenID Connect 1.0 Authentication, the JWS algorithm resolver may evaluate the provided `ClientRegistration` to determine which algorithm to return.
 
-
 [[webflux-oauth2-login-advanced-oidc-logout]]
-== OpenID Connect 1.0 Logout
-
-OpenID Connect Session Management 1.0 allows the ability to log out the End-User at the Provider using the Client.
-One of the strategies available is https://openid.net/specs/openid-connect-session-1_0.html#RPLogout[RP-Initiated Logout].
-
-If the OpenID Provider supports both Session Management and https://openid.net/specs/openid-connect-discovery-1_0.html[Discovery], the client may obtain the `end_session_endpoint` `URL` from the OpenID Provider's https://openid.net/specs/openid-connect-session-1_0.html#OPMetadata[Discovery Metadata].
-This can be achieved by configuring the `ClientRegistration` with the `issuer-uri`, as in the following example:
-
-[source,yaml]
-----
-spring:
-  security:
-    oauth2:
-      client:
-        registration:
-          okta:
-            client-id: okta-client-id
-            client-secret: okta-client-secret
-            ...
-        provider:
-          okta:
-            issuer-uri: https://dev-1234.oktapreview.com
-----
-
-...and the `OidcClientInitiatedServerLogoutSuccessHandler`, which implements RP-Initiated Logout, may be configured as follows:
-
-====
-.Java
-[source,java,role="primary",subs="-attributes"]
-----
-@Configuration
-@EnableWebFluxSecurity
-public class OAuth2LoginSecurityConfig {
-
-	@Autowired
-	private ReactiveClientRegistrationRepository clientRegistrationRepository;
-
-	@Bean
-	public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
-		http
-			.authorizeExchange(authorize -> authorize
-				.anyExchange().authenticated()
-			)
-			.oauth2Login(withDefaults())
-			.logout(logout -> logout
-				.logoutSuccessHandler(oidcLogoutSuccessHandler())
-			);
-
-		return http.build();
-	}
-
-	private ServerLogoutSuccessHandler oidcLogoutSuccessHandler() {
-		OidcClientInitiatedServerLogoutSuccessHandler oidcLogoutSuccessHandler =
-				new OidcClientInitiatedServerLogoutSuccessHandler(this.clientRegistrationRepository);
-
-		// Sets the location that the End-User's User Agent will be redirected to
-		// after the logout has been performed at the Provider
-		oidcLogoutSuccessHandler.setPostLogoutRedirectUri("{baseUrl}");
-
-		return oidcLogoutSuccessHandler;
-	}
-}
-----
-
-.Kotlin
-[source,kotlin,role="secondary",subs="-attributes"]
-----
-@Configuration
-@EnableWebFluxSecurity
-class OAuth2LoginSecurityConfig {
-
-    @Autowired
-    private lateinit var clientRegistrationRepository: ReactiveClientRegistrationRepository
-
-    @Bean
-    fun securityWebFilterChain(http: ServerHttpSecurity): SecurityWebFilterChain {
-        http {
-            authorizeExchange {
-                authorize(anyExchange, authenticated)
-            }
-            oauth2Login { }
-            logout {
-                logoutSuccessHandler = oidcLogoutSuccessHandler()
-            }
-        }
-
-        return http.build()
-    }
-
-    private fun oidcLogoutSuccessHandler(): ServerLogoutSuccessHandler {
-        val oidcLogoutSuccessHandler = OidcClientInitiatedServerLogoutSuccessHandler(clientRegistrationRepository)
-
-        // Sets the location that the End-User's User Agent will be redirected to
-        // after the logout has been performed at the Provider
-        oidcLogoutSuccessHandler.setPostLogoutRedirectUri("{baseUrl}")
-        return oidcLogoutSuccessHandler
-    }
-}
-----
-====
-
-NOTE: `OidcClientInitiatedServerLogoutSuccessHandler` supports the `+{baseUrl}+` placeholder.
-If used, the application's base URL, like `https://app.example.org`, will replace it at request time.
+Then, you can proceed to configure xref:reactive/oauth2/login/logout.adoc[logout].

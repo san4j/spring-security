@@ -11,13 +11,16 @@ This will:
 Often, you will want to also invalidate the session on logout.
 To achieve this, you can add the `WebSessionServerLogoutHandler` to your logout configuration, like so:
 
-.Java
+[tabs]
+======
+Java::
++
 [source,java,role="primary"]
 ----
 @Bean
 SecurityWebFilterChain http(ServerHttpSecurity http) throws Exception {
     DelegatingServerLogoutHandler logoutHandler = new DelegatingServerLogoutHandler(
-            new WebSessionServerLogoutHandler(), new SecurityContextServerLogoutHandler()
+            new SecurityContextServerLogoutHandler(), new WebSessionServerLogoutHandler()
     );
 
     http
@@ -28,13 +31,14 @@ SecurityWebFilterChain http(ServerHttpSecurity http) throws Exception {
 }
 ----
 
-.Kotlin
+Kotlin::
++
 [source,kotlin,role="secondary"]
 ----
 @Bean
 fun http(http: ServerHttpSecurity): SecurityWebFilterChain {
     val customLogoutHandler = DelegatingServerLogoutHandler(
-        WebSessionServerLogoutHandler(), SecurityContextServerLogoutHandler()
+        SecurityContextServerLogoutHandler(), WebSessionServerLogoutHandler()
     )
     
     return http {
@@ -47,3 +51,4 @@ fun http(http: ServerHttpSecurity): SecurityWebFilterChain {
     }
 }
 ----
+======

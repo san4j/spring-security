@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package org.springframework.security.config.annotation.web.configurers;
 
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.apache.http.HttpHeaders;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -25,18 +27,24 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.MediaType;
-import org.springframework.security.config.annotation.ObjectPostProcessor;
+import org.springframework.mock.web.MockHttpSession;
+import org.springframework.security.config.Customizer;
+import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.config.annotation.SecurityContextChangedListenerConfig;
-import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
 import org.springframework.security.config.test.SpringTestContext;
 import org.springframework.security.config.test.SpringTestContextExtension;
 import org.springframework.security.core.context.SecurityContextHolderStrategy;
+import org.springframework.security.core.userdetails.PasswordEncodedUser;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.provisioning.InMemoryUserDetailsManager;
+import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.RememberMeServices;
 import org.springframework.security.web.authentication.logout.LogoutFilter;
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -46,6 +54,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
@@ -73,36 +82,36 @@ public class LogoutConfigurerTests {
 	@Test
 	public void configureWhenDefaultLogoutSuccessHandlerForHasNullLogoutHandlerThenException() {
 		assertThatExceptionOfType(BeanCreationException.class)
-				.isThrownBy(() -> this.spring.register(NullLogoutSuccessHandlerConfig.class).autowire())
-				.withRootCauseInstanceOf(IllegalArgumentException.class);
+			.isThrownBy(() -> this.spring.register(NullLogoutSuccessHandlerConfig.class).autowire())
+			.withRootCauseInstanceOf(IllegalArgumentException.class);
 	}
 
 	@Test
 	public void configureWhenDefaultLogoutSuccessHandlerForHasNullLogoutHandlerInLambdaThenException() {
 		assertThatExceptionOfType(BeanCreationException.class)
-				.isThrownBy(() -> this.spring.register(NullLogoutSuccessHandlerInLambdaConfig.class).autowire())
-				.withRootCauseInstanceOf(IllegalArgumentException.class);
+			.isThrownBy(() -> this.spring.register(NullLogoutSuccessHandlerInLambdaConfig.class).autowire())
+			.withRootCauseInstanceOf(IllegalArgumentException.class);
 	}
 
 	@Test
 	public void configureWhenDefaultLogoutSuccessHandlerForHasNullMatcherThenException() {
 		assertThatExceptionOfType(BeanCreationException.class)
-				.isThrownBy(() -> this.spring.register(NullMatcherConfig.class).autowire())
-				.withRootCauseInstanceOf(IllegalArgumentException.class);
+			.isThrownBy(() -> this.spring.register(NullMatcherConfig.class).autowire())
+			.withRootCauseInstanceOf(IllegalArgumentException.class);
 	}
 
 	@Test
 	public void configureWhenDefaultLogoutSuccessHandlerForHasNullMatcherInLambdaThenException() {
 		assertThatExceptionOfType(BeanCreationException.class)
-				.isThrownBy(() -> this.spring.register(NullMatcherInLambdaConfig.class).autowire())
-				.withRootCauseInstanceOf(IllegalArgumentException.class);
+			.isThrownBy(() -> this.spring.register(NullMatcherInLambdaConfig.class).autowire())
+			.withRootCauseInstanceOf(IllegalArgumentException.class);
 	}
 
 	@Test
 	public void configureWhenRegisteringObjectPostProcessorThenInvokedOnLogoutFilter() {
 		this.spring.register(ObjectPostProcessorConfig.class).autowire();
-		ObjectPostProcessor<LogoutFilter> objectPostProcessor = this.spring.getContext()
-				.getBean(ObjectPostProcessor.class);
+		ObjectPostProcessor<Object> objectPostProcessor = this.spring.getContext()
+			.getBean(ObjectPostProcessorConfig.class).objectPostProcessor;
 		verify(objectPostProcessor).postProcess(any(LogoutFilter.class));
 	}
 
@@ -212,23 +221,24 @@ public class LogoutConfigurerTests {
 	@Test
 	public void configureWhenLogoutHandlerNullThenException() {
 		assertThatExceptionOfType(BeanCreationException.class)
-				.isThrownBy(() -> this.spring.register(NullLogoutHandlerConfig.class).autowire())
-				.withRootCauseInstanceOf(IllegalArgumentException.class);
+			.isThrownBy(() -> this.spring.register(NullLogoutHandlerConfig.class).autowire())
+			.withRootCauseInstanceOf(IllegalArgumentException.class);
 	}
 
 	@Test
 	public void configureWhenLogoutHandlerNullInLambdaThenException() {
 		assertThatExceptionOfType(BeanCreationException.class)
-				.isThrownBy(() -> this.spring.register(NullLogoutHandlerInLambdaConfig.class).autowire())
-				.withRootCauseInstanceOf(IllegalArgumentException.class);
+			.isThrownBy(() -> this.spring.register(NullLogoutHandlerInLambdaConfig.class).autowire())
+			.withRootCauseInstanceOf(IllegalArgumentException.class);
 	}
 
 	// SEC-3170
 	@Test
 	public void rememberMeWhenRememberMeServicesNotLogoutHandlerThenRedirectsToLogin() throws Exception {
 		this.spring.register(RememberMeNoLogoutHandler.class).autowire();
-		this.mvc.perform(post("/logout").with(csrf())).andExpect(status().isFound())
-				.andExpect(redirectedUrl("/login?logout"));
+		this.mvc.perform(post("/logout").with(csrf()))
+			.andExpect(status().isFound())
+			.andExpect(redirectedUrl("/login?logout"));
 	}
 
 	@Test
@@ -322,16 +332,54 @@ public class LogoutConfigurerTests {
 		this.mvc.perform(post("/logout").with(csrf())).andExpect(status().isNotFound());
 	}
 
+	@Test
+	public void logoutWhenCustomSecurityContextRepositoryThenUses() throws Exception {
+		CustomSecurityContextRepositoryConfig.repository = mock(SecurityContextRepository.class);
+		this.spring.register(CustomSecurityContextRepositoryConfig.class).autowire();
+		// @formatter:off
+		MockHttpServletRequestBuilder logoutRequest = post("/logout")
+				.with(csrf())
+				.with(user("user"))
+				.header(HttpHeaders.ACCEPT, MediaType.TEXT_HTML_VALUE);
+		this.mvc.perform(logoutRequest)
+				.andExpect(status().isFound())
+				.andExpect(redirectedUrl("/login?logout"));
+		// @formatter:on
+		int invocationCount = 2; // 1 from user() post processor and 1 from
+									// SecurityContextLogoutHandler
+		verify(CustomSecurityContextRepositoryConfig.repository, times(invocationCount)).saveContext(any(),
+				any(HttpServletRequest.class), any(HttpServletResponse.class));
+	}
+
+	@Test
+	public void logoutWhenNoSecurityContextRepositoryThenHttpSessionSecurityContextRepository() throws Exception {
+		this.spring.register(InvalidateHttpSessionFalseConfig.class).autowire();
+		MockHttpSession session = mock(MockHttpSession.class);
+		// @formatter:off
+		MockHttpServletRequestBuilder logoutRequest = post("/logout")
+				.with(csrf())
+				.with(user("user"))
+				.session(session)
+				.header(HttpHeaders.ACCEPT, MediaType.TEXT_HTML_VALUE);
+		this.mvc.perform(logoutRequest)
+				.andExpect(status().isFound())
+				.andExpect(redirectedUrl("/login?logout"))
+				.andReturn();
+		// @formatter:on
+		verify(session).removeAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY);
+	}
+
 	@Configuration
 	@EnableWebSecurity
-	static class NullLogoutSuccessHandlerConfig extends WebSecurityConfigurerAdapter {
+	static class InvalidateHttpSessionFalseConfig {
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
-				.logout()
-					.defaultLogoutSuccessHandlerFor(null, mock(RequestMatcher.class));
+				.logout((logout) -> logout.invalidateHttpSession(false))
+				.securityContext((context) -> context.requireExplicitSave(true));
+			return http.build();
 			// @formatter:on
 		}
 
@@ -339,15 +387,53 @@ public class LogoutConfigurerTests {
 
 	@Configuration
 	@EnableWebSecurity
-	static class NullLogoutSuccessHandlerInLambdaConfig extends WebSecurityConfigurerAdapter {
+	static class CustomSecurityContextRepositoryConfig {
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		static SecurityContextRepository repository;
+
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+			// @formatter:off
+			http
+				.logout(Customizer.withDefaults())
+				.securityContext((context) -> context
+					.requireExplicitSave(true)
+					.securityContextRepository(repository)
+				);
+			return http.build();
+			// @formatter:on
+		}
+
+	}
+
+	@Configuration
+	@EnableWebSecurity
+	static class NullLogoutSuccessHandlerConfig {
+
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+			// @formatter:off
+			http
+				.logout()
+					.defaultLogoutSuccessHandlerFor(null, mock(RequestMatcher.class));
+			return http.build();
+			// @formatter:on
+		}
+
+	}
+
+	@Configuration
+	@EnableWebSecurity
+	static class NullLogoutSuccessHandlerInLambdaConfig {
+
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.logout((logout) ->
 					logout.defaultLogoutSuccessHandlerFor(null, mock(RequestMatcher.class))
 				);
+			return http.build();
 			// @formatter:on
 		}
 
@@ -355,14 +441,15 @@ public class LogoutConfigurerTests {
 
 	@Configuration
 	@EnableWebSecurity
-	static class NullMatcherConfig extends WebSecurityConfigurerAdapter {
+	static class NullMatcherConfig {
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.logout()
 					.defaultLogoutSuccessHandlerFor(mock(LogoutSuccessHandler.class), null);
+			return http.build();
 			// @formatter:on
 		}
 
@@ -370,15 +457,16 @@ public class LogoutConfigurerTests {
 
 	@Configuration
 	@EnableWebSecurity
-	static class NullMatcherInLambdaConfig extends WebSecurityConfigurerAdapter {
+	static class NullMatcherInLambdaConfig {
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.logout((logout) ->
 					logout.defaultLogoutSuccessHandlerFor(mock(LogoutSuccessHandler.class), null)
 				);
+			return http.build();
 			// @formatter:on
 		}
 
@@ -386,15 +474,16 @@ public class LogoutConfigurerTests {
 
 	@Configuration
 	@EnableWebSecurity
-	static class ObjectPostProcessorConfig extends WebSecurityConfigurerAdapter {
+	static class ObjectPostProcessorConfig {
 
 		ObjectPostProcessor<Object> objectPostProcessor = spy(ReflectingObjectPostProcessor.class);
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.logout();
+			return http.build();
 			// @formatter:on
 		}
 
@@ -416,10 +505,10 @@ public class LogoutConfigurerTests {
 
 	@Configuration
 	@EnableWebSecurity
-	static class DuplicateDoesNotOverrideConfig extends WebSecurityConfigurerAdapter {
+	static class DuplicateDoesNotOverrideConfig {
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.logout()
@@ -427,29 +516,28 @@ public class LogoutConfigurerTests {
 					.and()
 				.logout();
 			// @formatter:on
+			return http.build();
 		}
 
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
-			// @formatter:off
-			auth
-				.inMemoryAuthentication();
-			// @formatter:on
+		@Bean
+		UserDetailsService userDetailsService() {
+			return new InMemoryUserDetailsManager(PasswordEncodedUser.user());
 		}
 
 	}
 
 	@Configuration
 	@EnableWebSecurity
-	static class CsrfDisabledConfig extends WebSecurityConfigurerAdapter {
+	static class CsrfDisabledConfig {
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.csrf()
 					.disable()
 				.logout();
+			return http.build();
 			// @formatter:on
 		}
 
@@ -457,16 +545,17 @@ public class LogoutConfigurerTests {
 
 	@Configuration
 	@EnableWebSecurity
-	static class CsrfDisabledAndCustomLogoutConfig extends WebSecurityConfigurerAdapter {
+	static class CsrfDisabledAndCustomLogoutConfig {
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.csrf()
 					.disable()
 				.logout()
 					.logoutUrl("/custom/logout");
+			return http.build();
 			// @formatter:on
 		}
 
@@ -474,15 +563,16 @@ public class LogoutConfigurerTests {
 
 	@Configuration
 	@EnableWebSecurity
-	static class CsrfDisabledAndCustomLogoutInLambdaConfig extends WebSecurityConfigurerAdapter {
+	static class CsrfDisabledAndCustomLogoutInLambdaConfig {
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.csrf()
 					.disable()
 				.logout((logout) -> logout.logoutUrl("/custom/logout"));
+			return http.build();
 			// @formatter:on
 		}
 
@@ -490,14 +580,15 @@ public class LogoutConfigurerTests {
 
 	@Configuration
 	@EnableWebSecurity
-	static class NullLogoutHandlerConfig extends WebSecurityConfigurerAdapter {
+	static class NullLogoutHandlerConfig {
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.logout()
 					.addLogoutHandler(null);
+			return http.build();
 			// @formatter:on
 		}
 
@@ -505,13 +596,14 @@ public class LogoutConfigurerTests {
 
 	@Configuration
 	@EnableWebSecurity
-	static class NullLogoutHandlerInLambdaConfig extends WebSecurityConfigurerAdapter {
+	static class NullLogoutHandlerInLambdaConfig {
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.logout((logout) -> logout.addLogoutHandler(null));
+			return http.build();
 			// @formatter:on
 		}
 
@@ -519,16 +611,17 @@ public class LogoutConfigurerTests {
 
 	@Configuration
 	@EnableWebSecurity
-	static class RememberMeNoLogoutHandler extends WebSecurityConfigurerAdapter {
+	static class RememberMeNoLogoutHandler {
 
 		static RememberMeServices REMEMBER_ME = mock(RememberMeServices.class);
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.rememberMe()
 					.rememberMeServices(REMEMBER_ME);
+			return http.build();
 			// @formatter:on
 		}
 
@@ -536,20 +629,21 @@ public class LogoutConfigurerTests {
 
 	@Configuration
 	@EnableWebSecurity
-	static class BasicSecurityConfig extends WebSecurityConfigurerAdapter {
+	static class BasicSecurityConfig {
 
 	}
 
 	@Configuration
 	@EnableWebSecurity
-	static class LogoutDisabledConfig extends WebSecurityConfigurerAdapter {
+	static class LogoutDisabledConfig {
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.logout()
 					.disable();
+			return http.build();
 			// @formatter:on
 		}
 

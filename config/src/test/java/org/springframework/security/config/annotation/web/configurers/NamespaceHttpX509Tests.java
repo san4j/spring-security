@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2019 the original author or authors.
+ * Copyright 2002-2022 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,15 +34,17 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.security.authentication.AuthenticationDetailsSource;
-import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
 import org.springframework.security.config.test.SpringTestContext;
 import org.springframework.security.config.test.SpringTestContextExtension;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.authority.AuthorityUtils;
 import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.provisioning.InMemoryUserDetailsManager;
+import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.preauth.PreAuthenticatedGrantedAuthoritiesWebAuthenticationDetails;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -135,19 +137,20 @@ public class NamespaceHttpX509Tests {
 	@Configuration
 	@EnableWebSecurity
 	@EnableWebMvc
-	public static class X509Config extends WebSecurityConfigurerAdapter {
+	public static class X509Config {
 
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
-			// @formatter:off
-			auth
-				.inMemoryAuthentication()
-					.withUser("rod").password("password").roles("USER", "ADMIN");
-			// @formatter:on
+		@Bean
+		UserDetailsService userDetailsService() {
+			UserDetails user = User.withDefaultPasswordEncoder()
+				.username("rod")
+				.password("password")
+				.roles("USER", "ADMIN")
+				.build();
+			return new InMemoryUserDetailsManager(user);
 		}
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.authorizeRequests()
@@ -155,6 +158,7 @@ public class NamespaceHttpX509Tests {
 					.and()
 				.x509();
 			// @formatter:on
+			return http.build();
 		}
 
 	}
@@ -162,19 +166,20 @@ public class NamespaceHttpX509Tests {
 	@Configuration
 	@EnableWebSecurity
 	@EnableWebMvc
-	static class AuthenticationDetailsSourceRefConfig extends WebSecurityConfigurerAdapter {
+	static class AuthenticationDetailsSourceRefConfig {
 
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
-			// @formatter:off
-			auth
-				.inMemoryAuthentication()
-					.withUser("rod").password("password").roles("USER", "ADMIN");
-			// @formatter:on
+		@Bean
+		UserDetailsService userDetailsService() {
+			UserDetails user = User.withDefaultPasswordEncoder()
+				.username("rod")
+				.password("password")
+				.roles("USER", "ADMIN")
+				.build();
+			return new InMemoryUserDetailsManager(user);
 		}
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.authorizeRequests()
@@ -183,6 +188,7 @@ public class NamespaceHttpX509Tests {
 				.x509()
 					.authenticationDetailsSource(authenticationDetailsSource());
 			// @formatter:on
+			return http.build();
 		}
 
 		@Bean
@@ -195,19 +201,20 @@ public class NamespaceHttpX509Tests {
 	@EnableWebMvc
 	@Configuration
 	@EnableWebSecurity
-	public static class SubjectPrincipalRegexConfig extends WebSecurityConfigurerAdapter {
+	public static class SubjectPrincipalRegexConfig {
 
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
-			// @formatter:off
-			auth
-				.inMemoryAuthentication()
-					.withUser("rod").password("password").roles("USER", "ADMIN");
-			// @formatter:on
+		@Bean
+		UserDetailsService userDetailsService() {
+			UserDetails user = User.withDefaultPasswordEncoder()
+				.username("rod")
+				.password("password")
+				.roles("USER", "ADMIN")
+				.build();
+			return new InMemoryUserDetailsManager(user);
 		}
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.authorizeRequests()
@@ -216,6 +223,7 @@ public class NamespaceHttpX509Tests {
 				.x509()
 					.subjectPrincipalRegex("CN=(.*?)@example.com(?:,|$)");
 			// @formatter:on
+			return http.build();
 		}
 
 	}
@@ -223,19 +231,20 @@ public class NamespaceHttpX509Tests {
 	@EnableWebMvc
 	@Configuration
 	@EnableWebSecurity
-	public static class CustomPrincipalExtractorConfig extends WebSecurityConfigurerAdapter {
+	public static class CustomPrincipalExtractorConfig {
 
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
-			// @formatter:off
-			auth
-				.inMemoryAuthentication()
-					.withUser("rod@example.com").password("password").roles("USER", "ADMIN");
-			// @formatter:on
+		@Bean
+		UserDetailsService userDetailsService() {
+			UserDetails user = User.withDefaultPasswordEncoder()
+				.username("rod@example.com")
+				.password("password")
+				.roles("USER", "ADMIN")
+				.build();
+			return new InMemoryUserDetailsManager(user);
 		}
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.authorizeRequests()
@@ -244,6 +253,7 @@ public class NamespaceHttpX509Tests {
 				.x509()
 					.x509PrincipalExtractor(this::extractCommonName);
 			// @formatter:on
+			return http.build();
 		}
 
 		private String extractCommonName(X509Certificate certificate) {
@@ -256,19 +266,20 @@ public class NamespaceHttpX509Tests {
 	@EnableWebMvc
 	@Configuration
 	@EnableWebSecurity
-	public static class UserDetailsServiceRefConfig extends WebSecurityConfigurerAdapter {
+	public static class UserDetailsServiceRefConfig {
 
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
-			// @formatter:off
-			auth
-				.inMemoryAuthentication()
-					.withUser("rod").password("password").roles("USER", "ADMIN");
-			// @formatter:on
+		@Bean
+		UserDetailsService userDetailsService() {
+			UserDetails user = User.withDefaultPasswordEncoder()
+				.username("rod")
+				.password("password")
+				.roles("USER", "ADMIN")
+				.build();
+			return new InMemoryUserDetailsManager(user);
 		}
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.authorizeRequests()
@@ -277,6 +288,7 @@ public class NamespaceHttpX509Tests {
 				.x509()
 					.userDetailsService((username) -> USER);
 			// @formatter:on
+			return http.build();
 		}
 
 	}
@@ -284,19 +296,20 @@ public class NamespaceHttpX509Tests {
 	@EnableWebMvc
 	@Configuration
 	@EnableWebSecurity
-	public static class AuthenticationUserDetailsServiceConfig extends WebSecurityConfigurerAdapter {
+	public static class AuthenticationUserDetailsServiceConfig {
 
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
-			// @formatter:off
-			auth
-				.inMemoryAuthentication()
-					.withUser("rod").password("password").roles("USER", "ADMIN");
-			// @formatter:on
+		@Bean
+		UserDetailsService userDetailsService() {
+			UserDetails user = User.withDefaultPasswordEncoder()
+				.username("rod")
+				.password("password")
+				.roles("USER", "ADMIN")
+				.build();
+			return new InMemoryUserDetailsManager(user);
 		}
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.authorizeRequests()
@@ -305,6 +318,7 @@ public class NamespaceHttpX509Tests {
 				.x509()
 					.authenticationUserDetailsService((authentication) -> USER);
 			// @formatter:on
+			return http.build();
 		}
 
 	}

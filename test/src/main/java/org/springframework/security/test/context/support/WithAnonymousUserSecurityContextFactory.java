@@ -28,7 +28,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.context.SecurityContextHolderStrategy;
 
 /**
- * A {@link WithAnonymousUserSecurityContextFactory} that runs with an
+ * A {@link WithSecurityContextFactory} that runs with an
  * {@link AnonymousAuthenticationToken}. .
  *
  * @author Rob Winch
@@ -38,7 +38,7 @@ import org.springframework.security.core.context.SecurityContextHolderStrategy;
 final class WithAnonymousUserSecurityContextFactory implements WithSecurityContextFactory<WithAnonymousUser> {
 
 	private SecurityContextHolderStrategy securityContextHolderStrategy = SecurityContextHolder
-			.getContextHolderStrategy();
+		.getContextHolderStrategy();
 
 	@Override
 	public SecurityContext createSecurityContext(WithAnonymousUser withUser) {

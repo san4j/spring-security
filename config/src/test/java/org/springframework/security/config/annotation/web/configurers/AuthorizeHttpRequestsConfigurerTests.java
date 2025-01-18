@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,27 +18,44 @@ package org.springframework.security.config.annotation.web.configurers;
 
 import java.util.function.Supplier;
 
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationHandler;
+import io.micrometer.observation.ObservationRegistry;
+import io.micrometer.observation.ObservationTextPublisher;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 
+import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.BeanCreationException;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
+import org.springframework.security.access.hierarchicalroles.RoleHierarchyImpl;
 import org.springframework.security.authentication.RememberMeAuthenticationToken;
 import org.springframework.security.authentication.TestAuthentication;
 import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.authorization.AuthorizationEventPublisher;
 import org.springframework.security.authorization.AuthorizationManager;
-import org.springframework.security.config.annotation.ObjectPostProcessor;
+import org.springframework.security.authorization.AuthorizationObservationContext;
+import org.springframework.security.authorization.AuthorizationResult;
+import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.config.annotation.web.AbstractRequestMatcherRegistry;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.core.GrantedAuthorityDefaults;
+import org.springframework.security.config.observation.SecurityObservationSettings;
 import org.springframework.security.config.test.SpringTestContext;
 import org.springframework.security.config.test.SpringTestContextExtension;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.AuthorityUtils;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
@@ -46,6 +63,7 @@ import org.springframework.security.web.access.expression.WebExpressionAuthoriza
 import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 import org.springframework.security.web.access.intercept.RequestMatcherDelegatingAuthorizationManager;
+import org.springframework.security.web.servlet.util.matcher.MvcRequestMatcher;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
@@ -55,12 +73,17 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.config.annotation.EnableWebMvc;
+import org.springframework.web.servlet.handler.HandlerMappingIntrospector;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.security.config.Customizer.withDefaults;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -85,37 +108,38 @@ public class AuthorizeHttpRequestsConfigurerTests {
 	@Test
 	public void configureWhenAuthorizedHttpRequestsAndNoRequestsThenException() {
 		assertThatExceptionOfType(BeanCreationException.class)
-				.isThrownBy(() -> this.spring.register(NoRequestsConfig.class).autowire()).withMessageContaining(
-						"At least one mapping is required (for example, authorizeHttpRequests().anyRequest().authenticated())");
+			.isThrownBy(() -> this.spring.register(NoRequestsConfig.class).autowire())
+			.withMessageContaining(
+					"At least one mapping is required (for example, authorizeHttpRequests().anyRequest().authenticated())");
 	}
 
 	@Test
 	public void configureNoParameterWhenAuthorizedHttpRequestsAndNoRequestsThenException() {
 		assertThatExceptionOfType(BeanCreationException.class)
-				.isThrownBy(() -> this.spring.register(NoRequestsNoParameterConfig.class).autowire())
-				.withMessageContaining(
-						"At least one mapping is required (for example, authorizeHttpRequests().anyRequest().authenticated())");
+			.isThrownBy(() -> this.spring.register(NoRequestsNoParameterConfig.class).autowire())
+			.withMessageContaining(
+					"At least one mapping is required (for example, authorizeHttpRequests().anyRequest().authenticated())");
 	}
 
 	@Test
 	public void configureWhenAnyRequestIncompleteMappingThenException() {
 		assertThatExceptionOfType(BeanCreationException.class)
-				.isThrownBy(() -> this.spring.register(IncompleteMappingConfig.class).autowire())
-				.withMessageContaining("An incomplete mapping was found for ");
+			.isThrownBy(() -> this.spring.register(IncompleteMappingConfig.class).autowire())
+			.withMessageContaining("An incomplete mapping was found for ");
 	}
 
 	@Test
 	public void configureNoParameterWhenAnyRequestIncompleteMappingThenException() {
 		assertThatExceptionOfType(BeanCreationException.class)
-				.isThrownBy(() -> this.spring.register(IncompleteMappingNoParameterConfig.class).autowire())
-				.withMessageContaining("An incomplete mapping was found for ");
+			.isThrownBy(() -> this.spring.register(IncompleteMappingNoParameterConfig.class).autowire())
+			.withMessageContaining("An incomplete mapping was found for ");
 	}
 
 	@Test
 	public void configureWhenMvcMatcherAfterAnyRequestThenException() {
 		assertThatExceptionOfType(BeanCreationException.class)
-				.isThrownBy(() -> this.spring.register(AfterAnyRequestConfig.class).autowire())
-				.withMessageContaining("Can't configure mvcMatchers after anyRequest");
+			.isThrownBy(() -> this.spring.register(AfterAnyRequestConfig.class).autowire())
+			.withMessageContaining("Can't configure mvcMatchers after anyRequest");
 	}
 
 	@Test
@@ -138,15 +162,17 @@ public class AuthorizeHttpRequestsConfigurerTests {
 	public void configureMvcMatcherAccessAuthorizationManagerWhenNullThenException() {
 		CustomAuthorizationManagerConfig.authorizationManager = null;
 		assertThatExceptionOfType(BeanCreationException.class)
-				.isThrownBy(() -> this.spring.register(CustomAuthorizationManagerConfig.class).autowire())
-				.withMessageContaining("manager cannot be null");
+			.isThrownBy(() -> this.spring.register(CustomAuthorizationManagerConfig.class).autowire())
+			.withMessageContaining("manager cannot be null");
 	}
 
 	@Test
 	public void configureWhenObjectPostProcessorRegisteredThenInvokedOnAuthorizationManagerAndAuthorizationFilter() {
 		this.spring.register(ObjectPostProcessorConfig.class).autowire();
-		ObjectPostProcessor objectPostProcessor = this.spring.getContext().getBean(ObjectPostProcessor.class);
+		ObjectPostProcessor<Object> objectPostProcessor = this.spring.getContext()
+			.getBean(ObjectPostProcessorConfig.class).objectPostProcessor;
 		verify(objectPostProcessor).postProcess(any(RequestMatcherDelegatingAuthorizationManager.class));
+		verify(objectPostProcessor).postProcess(any(AuthorizationManager.class));
 		verify(objectPostProcessor).postProcess(any(AuthorizationFilter.class));
 	}
 
@@ -271,6 +297,17 @@ public class AuthorizeHttpRequestsConfigurerTests {
 	}
 
 	@Test
+	public void getWhenHasRoleUserAndRoleHierarchyConfiguredThenGreaterRoleTakesPrecedence() throws Exception {
+		this.spring.register(RoleHierarchyUserConfig.class, BasicController.class).autowire();
+		// @formatter:off
+		MockHttpServletRequestBuilder requestWithAdmin = get("/")
+				.with(user("user")
+				.roles("ADMIN"));
+		// @formatter:on
+		this.mvc.perform(requestWithAdmin).andExpect(status().isOk());
+	}
+
+	@Test
 	public void getWhenRoleUserOrAdminConfiguredAndRoleIsUserThenRespondsWithOk() throws Exception {
 		this.spring.register(RoleUserOrAdminConfig.class, BasicController.class).autowire();
 		// @formatter:off
@@ -356,7 +393,7 @@ public class AuthorizeHttpRequestsConfigurerTests {
 	}
 
 	@Test
-	public void getWhenServletPathRoleAdminConfiguredAndRoleIsUserAndWithoutServletPathThenRespondsWithOk()
+	public void getWhenServletPathRoleAdminConfiguredAndRoleIsUserAndWithoutServletPathThenRespondsWithForbidden()
 			throws Exception {
 		this.spring.register(ServletPathConfig.class, BasicController.class).autowire();
 		// @formatter:off
@@ -364,7 +401,7 @@ public class AuthorizeHttpRequestsConfigurerTests {
 				.with(user("user")
 				.roles("USER"));
 		// @formatter:on
-		this.mvc.perform(requestWithUser).andExpect(status().isOk());
+		this.mvc.perform(requestWithUser).andExpect(status().isForbidden());
 	}
 
 	@Test
@@ -461,6 +498,43 @@ public class AuthorizeHttpRequestsConfigurerTests {
 	}
 
 	@Test
+	public void getWhenCustomRolePrefixAndRoleHasDifferentPrefixThenRespondsWithForbidden() throws Exception {
+		this.spring.register(GrantedAuthorityDefaultHasRoleConfig.class, BasicController.class).autowire();
+		// @formatter:off
+		MockHttpServletRequestBuilder requestWithUser = get("/")
+				.with(user("user")
+						.authorities(new SimpleGrantedAuthority("ROLE_USER")));
+		// @formatter:on
+		this.mvc.perform(requestWithUser).andExpect(status().isForbidden());
+	}
+
+	@Test
+	public void getWhenCustomRolePrefixAndHasRoleThenRespondsWithOk() throws Exception {
+		this.spring.register(GrantedAuthorityDefaultHasRoleConfig.class, BasicController.class).autowire();
+		// @formatter:off
+		MockHttpServletRequestBuilder requestWithUser = get("/")
+				.with(user("user")
+						.authorities(new SimpleGrantedAuthority("CUSTOM_PREFIX_USER")));
+		// @formatter:on
+		this.mvc.perform(requestWithUser).andExpect(status().isOk());
+	}
+
+	@Test
+	public void getWhenCustomRolePrefixAndHasAnyRoleThenRespondsWithOk() throws Exception {
+		this.spring.register(GrantedAuthorityDefaultHasAnyRoleConfig.class, BasicController.class).autowire();
+		// @formatter:off
+		MockHttpServletRequestBuilder requestWithUser = get("/")
+				.with(user("user")
+						.authorities(new SimpleGrantedAuthority("CUSTOM_PREFIX_USER")));
+		MockHttpServletRequestBuilder requestWithAdmin = get("/")
+				.with(user("user")
+						.authorities(new SimpleGrantedAuthority("CUSTOM_PREFIX_ADMIN")));
+		// @formatter:on
+		this.mvc.perform(requestWithUser).andExpect(status().isOk());
+		this.mvc.perform(requestWithAdmin).andExpect(status().isOk());
+	}
+
+	@Test
 	public void getWhenExpressionHasIpAddressLocalhostConfiguredIpAddressIsLocalhostThenRespondsWithOk()
 			throws Exception {
 		this.spring.register(ExpressionIpAddressLocalhostConfig.class, BasicController.class).autowire();
@@ -489,6 +563,17 @@ public class AuthorizeHttpRequestsConfigurerTests {
 		this.mvc.perform(request).andExpect(status().isOk());
 		request = get("/user/deny");
 		this.mvc.perform(request).andExpect(status().isUnauthorized());
+
+		UserDetails user = TestAuthentication.withUsername("taehong").build();
+		Authentication authentication = TestAuthentication.authenticated(user);
+		request = get("/v2/user/{username}", user.getUsername()).with(authentication(authentication));
+		this.mvc.perform(request).andExpect(status().isOk());
+
+		request = get("/v2/user/{username}", "withNoAuthentication");
+		this.mvc.perform(request).andExpect(status().isUnauthorized());
+
+		request = get("/v2/user/{username}", "another").with(authentication(authentication));
+		this.mvc.perform(request).andExpect(status().isForbidden());
 	}
 
 	private static RequestPostProcessor remoteAddress(String remoteAddress) {
@@ -540,6 +625,78 @@ public class AuthorizeHttpRequestsConfigurerTests {
 		this.spring.register(AnonymousConfig.class, BasicController.class).autowire();
 		MockHttpServletRequestBuilder requestWithUser = get("/").with(user("user"));
 		this.mvc.perform(requestWithUser).andExpect(status().isForbidden());
+	}
+
+	@Test
+	public void getWhenNotConfigAndAuthenticatedThenRespondsWithForbidden() throws Exception {
+		this.spring.register(NotConfig.class, BasicController.class).autowire();
+		MockHttpServletRequestBuilder requestWithUser = get("/").with(user("user"));
+		this.mvc.perform(requestWithUser).andExpect(status().isForbidden());
+	}
+
+	@Test
+	public void getWhenNotConfigAndNotAuthenticatedThenRespondsWithOk() throws Exception {
+		this.spring.register(NotConfig.class, BasicController.class).autowire();
+		MockHttpServletRequestBuilder requestWithUser = get("/");
+		this.mvc.perform(requestWithUser).andExpect(status().isOk());
+	}
+
+	@Test
+	public void getWhenObservationRegistryThenObserves() throws Exception {
+		this.spring.register(RoleUserConfig.class, BasicController.class, ObservationRegistryConfig.class).autowire();
+		ObservationHandler<Observation.Context> handler = this.spring.getContext().getBean(ObservationHandler.class);
+		this.mvc.perform(get("/").with(user("user").roles("USER"))).andExpect(status().isOk());
+		ArgumentCaptor<Observation.Context> context = ArgumentCaptor.forClass(Observation.Context.class);
+		verify(handler, atLeastOnce()).onStart(context.capture());
+		assertThat(context.getAllValues()).anyMatch((c) -> c instanceof AuthorizationObservationContext);
+		verify(handler, atLeastOnce()).onStop(context.capture());
+		assertThat(context.getAllValues()).anyMatch((c) -> c instanceof AuthorizationObservationContext);
+		this.mvc.perform(get("/").with(user("user").roles("WRONG"))).andExpect(status().isForbidden());
+		verify(handler).onError(any());
+	}
+
+	@Test
+	public void getWhenExcludeAuthorizationObservationsThenUnobserved() throws Exception {
+		this.spring
+			.register(RoleUserConfig.class, BasicController.class, ObservationRegistryConfig.class,
+					SelectableObservationsConfig.class)
+			.autowire();
+		ObservationHandler<Observation.Context> handler = this.spring.getContext().getBean(ObservationHandler.class);
+		this.mvc.perform(get("/").with(user("user").roles("USER"))).andExpect(status().isOk());
+		this.mvc.perform(get("/").with(user("user").roles("WRONG"))).andExpect(status().isForbidden());
+		verifyNoInteractions(handler);
+	}
+
+	@Configuration
+	@EnableWebSecurity
+	static class GrantedAuthorityDefaultHasRoleConfig {
+
+		@Bean
+		GrantedAuthorityDefaults grantedAuthorityDefaults() {
+			return new GrantedAuthorityDefaults("CUSTOM_PREFIX_");
+		}
+
+		@Bean
+		SecurityFilterChain myFilterChain(HttpSecurity http) throws Exception {
+			return http.authorizeHttpRequests((c) -> c.anyRequest().hasRole("USER")).build();
+		}
+
+	}
+
+	@Configuration
+	@EnableWebSecurity
+	static class GrantedAuthorityDefaultHasAnyRoleConfig {
+
+		@Bean
+		GrantedAuthorityDefaults grantedAuthorityDefaults() {
+			return new GrantedAuthorityDefaults("CUSTOM_PREFIX_");
+		}
+
+		@Bean
+		SecurityFilterChain myFilterChain(HttpSecurity http) throws Exception {
+			return http.authorizeHttpRequests((c) -> c.anyRequest().hasAnyRole("USER", "ADMIN")).build();
+		}
+
 	}
 
 	@Configuration
@@ -615,7 +772,7 @@ public class AuthorizeHttpRequestsConfigurerTests {
 			return http
 					.authorizeHttpRequests((requests) -> requests
 						.anyRequest().authenticated()
-						.mvcMatchers("/path").hasRole("USER")
+						.requestMatchers("/path").hasRole("USER")
 					)
 					.build();
 			// @formatter:on
@@ -770,6 +927,30 @@ public class AuthorizeHttpRequestsConfigurerTests {
 
 	@Configuration
 	@EnableWebSecurity
+	static class RoleHierarchyUserConfig {
+
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+			// @formatter:off
+			return http
+					.authorizeHttpRequests((requests) -> requests
+						.anyRequest().hasRole("USER")
+					)
+					.build();
+			// @formatter:on
+		}
+
+		@Bean
+		RoleHierarchy roleHierarchy() {
+			RoleHierarchyImpl roleHierarchy = new RoleHierarchyImpl();
+			roleHierarchy.setHierarchy("ROLE_ADMIN > ROLE_USER");
+			return roleHierarchy;
+		}
+
+	}
+
+	@Configuration
+	@EnableWebSecurity
 	static class RoleUserOrAdminConfig {
 
 		@Bean
@@ -847,11 +1028,13 @@ public class AuthorizeHttpRequestsConfigurerTests {
 	static class ServletPathConfig {
 
 		@Bean
-		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+		SecurityFilterChain filterChain(HttpSecurity http, HandlerMappingIntrospector introspector) throws Exception {
+			MvcRequestMatcher.Builder mvcMatcherBuilder = new MvcRequestMatcher.Builder(introspector)
+				.servletPath("/spring");
 			// @formatter:off
 			return http
 					.authorizeHttpRequests((requests) -> requests
-						.mvcMatchers("/").servletPath("/spring").hasRole("ADMIN")
+						.requestMatchers(mvcMatcherBuilder.pattern("/")).hasRole("ADMIN")
 					)
 					.build();
 			// @formatter:on
@@ -874,6 +1057,12 @@ public class AuthorizeHttpRequestsConfigurerTests {
 					)
 					.build();
 			// @formatter:on
+		}
+
+		@Bean
+		UserDetailsService users() {
+			return new InMemoryUserDetailsManager(
+					User.withUsername("user").password("{noop}password").roles("USER").build());
 		}
 
 	}
@@ -940,7 +1129,8 @@ public class AuthorizeHttpRequestsConfigurerTests {
 			http
 				.httpBasic(withDefaults())
 				.authorizeHttpRequests((requests) -> requests
-					.mvcMatchers("/user/{username}").access(new WebExpressionAuthorizationManager("#username == 'user'"))
+					.requestMatchers("/user/{username}").access(new WebExpressionAuthorizationManager("#username == 'user'"))
+					.requestMatchers("/v2/user/{username}").hasVariable("username").equalTo(Authentication::getName)
 				);
 			// @formatter:on
 			return http.build();
@@ -951,6 +1141,11 @@ public class AuthorizeHttpRequestsConfigurerTests {
 
 			@RequestMapping("/user/{username}")
 			String path(@PathVariable("username") String username) {
+				return username;
+			}
+
+			@RequestMapping("/v2/user/{username}")
+			String pathV2(@PathVariable("username") String username) {
 				return username;
 			}
 
@@ -1025,12 +1220,32 @@ public class AuthorizeHttpRequestsConfigurerTests {
 	}
 
 	@Configuration
+	@EnableWebSecurity
+	static class NotConfig {
+
+		@Bean
+		SecurityFilterChain chain(HttpSecurity http) throws Exception {
+			// @formatter:off
+			http
+				.httpBasic(withDefaults())
+				.authorizeHttpRequests((requests) -> requests
+					.anyRequest().not().authenticated()
+				);
+			// @formatter:on
+			return http.build();
+		}
+
+	}
+
+	@Configuration
 	static class AuthorizationEventPublisherConfig {
 
 		private final AuthorizationEventPublisher publisher = mock(AuthorizationEventPublisher.class);
 
 		@Bean
 		AuthorizationEventPublisher authorizationEventPublisher() {
+			doCallRealMethod().when(this.publisher)
+				.publishAuthorizationEvent(any(), any(), any(AuthorizationResult.class));
 			return this.publisher;
 		}
 
@@ -1045,6 +1260,59 @@ public class AuthorizeHttpRequestsConfigurerTests {
 
 		@PostMapping("/")
 		void rootPost() {
+		}
+
+	}
+
+	@Configuration
+	static class ObservationRegistryConfig {
+
+		private final ObservationRegistry registry = ObservationRegistry.create();
+
+		private final ObservationHandler<Observation.Context> handler = spy(new ObservationTextPublisher());
+
+		@Bean
+		ObservationRegistry observationRegistry() {
+			return this.registry;
+		}
+
+		@Bean
+		ObservationHandler<Observation.Context> observationHandler() {
+			return this.handler;
+		}
+
+		@Bean
+		ObservationRegistryPostProcessor observationRegistryPostProcessor(
+				ObjectProvider<ObservationHandler<Observation.Context>> handler) {
+			return new ObservationRegistryPostProcessor(handler);
+		}
+
+	}
+
+	static class ObservationRegistryPostProcessor implements BeanPostProcessor {
+
+		private final ObjectProvider<ObservationHandler<Observation.Context>> handler;
+
+		ObservationRegistryPostProcessor(ObjectProvider<ObservationHandler<Observation.Context>> handler) {
+			this.handler = handler;
+		}
+
+		@Override
+		public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
+			if (bean instanceof ObservationRegistry registry) {
+				registry.observationConfig().observationHandler(this.handler.getObject());
+			}
+			return bean;
+		}
+
+	}
+
+	@Configuration
+	static class SelectableObservationsConfig {
+
+		@Bean
+		SecurityObservationSettings observabilityDefaults() {
+			return SecurityObservationSettings.withDefaults().shouldObserveAuthorizations(false).build();
 		}
 
 	}

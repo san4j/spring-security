@@ -19,7 +19,7 @@ package org.springframework.security.config.annotation.authentication.configurer
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import org.springframework.security.config.annotation.ObjectPostProcessor;
+import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
 import org.springframework.security.core.authority.mapping.NullAuthoritiesMapper;
 import org.springframework.security.core.authority.mapping.SimpleAuthorityMapper;
@@ -53,7 +53,7 @@ public class LdapAuthenticationProviderConfigurerTests {
 		assertThat(ReflectionTestUtils.getField(this.configurer, "ldapAuthoritiesPopulator")).isNull();
 		this.configurer.ldapAuthoritiesPopulator(new NullLdapAuthoritiesPopulator());
 		assertThat(ReflectionTestUtils.getField(this.configurer, "ldapAuthoritiesPopulator"))
-				.isInstanceOf(NullLdapAuthoritiesPopulator.class);
+			.isInstanceOf(NullLdapAuthoritiesPopulator.class);
 	}
 
 	@Test

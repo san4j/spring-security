@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,6 +47,8 @@ public class PreAuthorizeAspectTests {
 
 	private PrePostSecured prePostSecured = new PrePostSecured();
 
+	private MultipleInterfaces multiple = new MultipleInterfaces();
+
 	@BeforeEach
 	public final void setUp() {
 		MockitoAnnotations.initMocks(this);
@@ -68,7 +70,7 @@ public class PreAuthorizeAspectTests {
 	@Test
 	public void securedClassMethodDeniesUnauthenticatedAccess() {
 		assertThatExceptionOfType(AuthenticationCredentialsNotFoundException.class)
-				.isThrownBy(() -> this.secured.securedClassMethod());
+			.isThrownBy(() -> this.secured.securedClassMethod());
 	}
 
 	@Test
@@ -103,6 +105,19 @@ public class PreAuthorizeAspectTests {
 		assertThatExceptionOfType(AccessDeniedException.class).isThrownBy(this.prePostSecured::denyAllMethod);
 	}
 
+	@Test
+	public void nestedDenyAllPreAuthorizeDeniesAccess() {
+		SecurityContextHolder.getContext().setAuthentication(this.anne);
+		assertThatExceptionOfType(AccessDeniedException.class)
+			.isThrownBy(() -> this.secured.myObject().denyAllMethod());
+	}
+
+	@Test
+	public void multipleInterfacesPreAuthorizeAllows() {
+		// aspectj doesn't inherit annotations
+		this.multiple.securedMethod();
+	}
+
 	interface SecuredInterface {
 
 		@PreAuthorize("hasRole('X')")
@@ -134,6 +149,10 @@ public class PreAuthorizeAspectTests {
 			privateMethod();
 		}
 
+		NestedObject myObject() {
+			return new NestedObject();
+		}
+
 	}
 
 	static class SecuredImplSubclass extends SecuredImpl {
@@ -153,6 +172,30 @@ public class PreAuthorizeAspectTests {
 
 		@PreAuthorize("denyAll")
 		void denyAllMethod() {
+		}
+
+	}
+
+	static class NestedObject {
+
+		@PreAuthorize("denyAll")
+		void denyAllMethod() {
+
+		}
+
+	}
+
+	interface AnotherSecuredInterface {
+
+		@PreAuthorize("hasRole('Y')")
+		void securedMethod();
+
+	}
+
+	static class MultipleInterfaces implements SecuredInterface, AnotherSecuredInterface {
+
+		@Override
+		public void securedMethod() {
 		}
 
 	}

@@ -124,7 +124,8 @@ public class AuthenticationManagerBeanDefinitionParserTests {
 	@Test
 	public void clearCredentialsPropertyIsRespected() {
 		ConfigurableApplicationContext appContext = this.spring
-				.context("<authentication-manager erase-credentials='false'/>").getContext();
+			.context("<authentication-manager erase-credentials='false'/>")
+			.getContext();
 		ProviderManager pm = (ProviderManager) appContext.getBeansOfType(ProviderManager.class).values().toArray()[0];
 		assertThat(pm.isEraseCredentialsAfterAuthentication()).isFalse();
 	}
@@ -139,7 +140,10 @@ public class AuthenticationManagerBeanDefinitionParserTests {
 				+ "<user-service>"
 				+ "  <user name='user' password='password' authorities='ROLE_A,ROLE_B' />"
 				+ "</user-service>"
-				+ "<http/>")
+				+ "<http>"
+				+ "  <intercept-url pattern=\"/**\" access=\"authenticated\"/>"
+				+ "  <http-basic />"
+				+ "</http>")
 				.mockMvcAfterSpringSecurityOk()
 				.autowire();
 		this.mockMvc.perform(get("/").with(httpBasic("user", "password")))

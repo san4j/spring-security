@@ -41,12 +41,12 @@ import org.springframework.security.web.SecurityFilterChain;
  * 	public WebSecurityCustomizer webSecurityCustomizer() {
  * 		return (web) -> web.ignoring()
  * 		// Spring Security should completely ignore URLs starting with /resources/
- * 				.antMatchers(&quot;/resources/**&quot;);
+ * 				.requestMatchers(&quot;/resources/**&quot;);
  * 	}
  *
  * 	&#064;Bean
  * 	public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
- * 		http.authorizeRequests().antMatchers(&quot;/public/**&quot;).permitAll().anyRequest()
+ * 		http.authorizeHttpRequests().requestMatchers(&quot;/public/**&quot;).permitAll().anyRequest()
  * 				.hasRole(&quot;USER&quot;).and()
  * 				// Possibly more configuration ...
  * 				.formLogin() // enable form based log in
@@ -75,7 +75,6 @@ import org.springframework.security.web.SecurityFilterChain;
  * </pre>
  *
  * @see WebSecurityConfigurer
- *
  * @author Rob Winch
  * @since 3.2
  */
@@ -83,7 +82,7 @@ import org.springframework.security.web.SecurityFilterChain;
 @Target(ElementType.TYPE)
 @Documented
 @Import({ WebSecurityConfiguration.class, SpringWebMvcImportSelector.class, OAuth2ImportSelector.class,
-		HttpSecurityConfiguration.class })
+		HttpSecurityConfiguration.class, ObservationImportSelector.class })
 @EnableGlobalAuthentication
 public @interface EnableWebSecurity {
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,16 @@
 
 package org.springframework.security.config.annotation.web
 
+import jakarta.servlet.Filter
+import jakarta.servlet.http.HttpServletRequest
 import org.springframework.context.ApplicationContext
 import org.springframework.security.authentication.AuthenticationManager
+import org.springframework.security.config.annotation.SecurityConfigurerAdapter
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository
 import org.springframework.security.saml2.provider.service.registration.RelyingPartyRegistrationRepository
+import org.springframework.security.web.DefaultSecurityFilterChain
 import org.springframework.security.web.util.matcher.RequestMatcher
-import org.springframework.util.ClassUtils
-import jakarta.servlet.Filter
-import jakarta.servlet.http.HttpServletRequest
 
 /**
  * Configures [HttpSecurity] using a [HttpSecurity Kotlin DSL][HttpSecurityDsl].
@@ -58,7 +59,7 @@ import jakarta.servlet.http.HttpServletRequest
  * @param httpConfiguration the configurations to apply to [HttpSecurity]
  */
 operator fun HttpSecurity.invoke(httpConfiguration: HttpSecurityDsl.() -> Unit) =
-        HttpSecurityDsl(this, httpConfiguration).build()
+    HttpSecurityDsl(this, httpConfiguration).build()
 
 /**
  * An [HttpSecurity] Kotlin DSL created by [`http { }`][invoke]
@@ -75,6 +76,72 @@ class HttpSecurityDsl(private val http: HttpSecurity, private val init: HttpSecu
     private val HANDLER_MAPPING_INTROSPECTOR = "org.springframework.web.servlet.handler.HandlerMappingIntrospector"
 
     var authenticationManager: AuthenticationManager? = null
+    val context: ApplicationContext = http.getSharedObject(ApplicationContext::class.java)
+
+    /**
+     * Applies a [SecurityConfigurerAdapter] to this [HttpSecurity]
+     *
+     * Example:
+     *
+     * ```
+     * @Configuration
+     * @EnableWebSecurity
+     * class SecurityConfig {
+     *
+     *     @Bean
+     *     fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
+     *         http {
+     *             apply(CustomSecurityConfigurer<HttpSecurity>()) {
+     *                 customProperty = "..."
+     *             }
+     *         }
+     *         return http.build()
+     *     }
+     * }
+     * ```
+     *
+     * @param configurer
+     * the [SecurityConfigurerAdapter] for further customizations
+     */
+    fun <C : SecurityConfigurerAdapter<DefaultSecurityFilterChain, HttpSecurity>> apply(
+        configurer: C,
+        configuration: C.() -> Unit = { }
+    ): C {
+        return this.http.apply(configurer).apply(configuration)
+    }
+
+    /**
+     * Applies a [SecurityConfigurerAdapter] to this [HttpSecurity]
+     *
+     * Example:
+     *
+     * ```
+     * @Configuration
+     * @EnableWebSecurity
+     * class SecurityConfig {
+     *
+     *     @Bean
+     *     fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
+     *         http {
+     *             with(CustomSecurityConfigurer<HttpSecurity>()) {
+     *                 customProperty = "..."
+     *             }
+     *         }
+     *         return http.build()
+     *     }
+     * }
+     * ```
+     *
+     * @param configurer
+     * the [HttpSecurity] for further customizations
+     * @since 6.2
+     */
+    fun <C : SecurityConfigurerAdapter<DefaultSecurityFilterChain, HttpSecurity>> with(
+        configurer: C,
+        configuration: C.() -> Unit = { }
+    ): HttpSecurity? {
+        return this.http.with(configurer, configuration)
+    }
 
     /**
      * Allows configuring the [HttpSecurity] to only be invoked when matching the
@@ -106,18 +173,8 @@ class HttpSecurityDsl(private val http: HttpSecurity, private val init: HttpSecu
      * configuration should be invoked.
      */
     fun securityMatcher(vararg pattern: String) {
-        val mvcPresent = ClassUtils.isPresent(
-                HANDLER_MAPPING_INTROSPECTOR,
-                AuthorizeRequestsDsl::class.java.classLoader) ||
-                ClassUtils.isPresent(
-                    HANDLER_MAPPING_INTROSPECTOR,
-                    AuthorizeHttpRequestsDsl::class.java.classLoader)
-        this.http.requestMatchers {
-            if (mvcPresent) {
-                it.mvcMatchers(*pattern)
-            } else {
-                it.antMatchers(*pattern)
-            }
+        this.http.securityMatchers {
+            it.requestMatchers(*pattern)
         }
     }
 
@@ -149,7 +206,7 @@ class HttpSecurityDsl(private val http: HttpSecurity, private val init: HttpSecu
      * this configuration should be invoked.
      */
     fun securityMatcher(vararg requestMatcher: RequestMatcher) {
-        this.http.requestMatchers {
+        this.http.securityMatchers {
             it.requestMatchers(*requestMatcher)
         }
     }
@@ -212,6 +269,7 @@ class HttpSecurityDsl(private val http: HttpSecurity, private val init: HttpSecu
      * access for requests
      * @see [AuthorizeRequestsDsl]
      */
+    @Deprecated(message = "Since 6.4. Use authorizeHttpRequests instead")
     fun authorizeRequests(authorizeRequestsConfiguration: AuthorizeRequestsDsl.() -> Unit) {
         val authorizeRequestsCustomizer = AuthorizeRequestsDsl().apply(authorizeRequestsConfiguration).get()
         this.http.authorizeRequests(authorizeRequestsCustomizer)
@@ -246,7 +304,8 @@ class HttpSecurityDsl(private val http: HttpSecurity, private val init: HttpSecu
      * @since 5.7
      */
     fun authorizeHttpRequests(authorizeHttpRequestsConfiguration: AuthorizeHttpRequestsDsl.() -> Unit) {
-        val authorizeHttpRequestsCustomizer = AuthorizeHttpRequestsDsl().apply(authorizeHttpRequestsConfiguration).get()
+        val authorizeHttpRequestsCustomizer =
+            AuthorizeHttpRequestsDsl(this.context).apply(authorizeHttpRequestsConfiguration).get()
         this.http.authorizeHttpRequests(authorizeHttpRequestsCustomizer)
     }
 
@@ -657,6 +716,106 @@ class HttpSecurityDsl(private val http: HttpSecurity, private val init: HttpSecu
     }
 
     /**
+     * Configures logout support for a SAML 2.0 Service Provider. <br>
+     * <br>
+     *
+     * Implements the <b>Single Logout Profile, using POST and REDIRECT bindings</b>, as
+     * documented in the
+     * <a target="_blank" href="https://docs.oasis-open.org/security/saml/">SAML V2.0
+     * Core, Profiles and Bindings</a> specifications. <br>
+     * <br>
+     *
+     * As a prerequisite to using this feature, is that you have a SAML v2.0 Asserting
+     * Party to send a logout request to. The representation of the relying party and the
+     * asserting party is contained within [RelyingPartyRegistration]. <br>
+     * <br>
+     *
+     * [RelyingPartyRegistration] (s) are composed within a
+     * [RelyingPartyRegistrationRepository], which is <b>required</b> and must be
+     * registered with the [ApplicationContext] or configured via
+     * [HttpSecurityDsl.saml2Login].<br>
+     * <br>
+     *
+     * The default configuration provides an auto-generated logout endpoint at
+     * `/logout` and redirects to `/login?logout` when
+     * logout completes. <br>
+     * <br>
+     *
+     * <p>
+     * <h2>Example Configuration</h2>
+     *
+     * The following example shows the minimal configuration required, using a
+     * hypothetical asserting party.
+     *
+     * Example:
+     *
+     * ```
+     * @Configuration
+     * @EnableWebSecurity
+     * class SecurityConfig {
+     *
+     *     @Bean
+     *     fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
+     *         http {
+     *             saml2Login {
+     *                 relyingPartyRegistration = getSaml2RelyingPartyRegistration()
+     *             }
+     *             saml2Logout { }
+     *         }
+     *         return http.build()
+     *     }
+     * }
+     * ```
+     *
+     * <p>
+     * @param saml2LogoutConfiguration custom configuration to configure the
+     * SAML 2.0 service provider
+     * @since 6.3
+     * @see [Saml2LogoutDsl]
+     */
+    fun saml2Logout(saml2LogoutConfiguration: Saml2LogoutDsl.() -> Unit) {
+        val saml2LogoutCustomizer = Saml2LogoutDsl().apply(saml2LogoutConfiguration).get()
+        this.http.saml2Logout(saml2LogoutCustomizer)
+    }
+
+    /**
+     * Configures a SAML 2.0 relying party metadata endpoint.
+     *
+     * A [RelyingPartyRegistrationRepository] is required and must be registered with
+     * the [ApplicationContext] or configured via
+     * [Saml2Dsl.relyingPartyRegistrationRepository]
+     *
+     * Example:
+     *
+     * The following example shows the minimal configuration required, using a
+     * hypothetical asserting party.
+     *
+     * ```
+     * @Configuration
+     * @EnableWebSecurity
+     * class SecurityConfig {
+     *
+     *     @Bean
+     *     fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
+     *         http {
+     *             saml2Login { }
+     *             saml2Metadata { }
+     *         }
+     *         return http.build()
+     *     }
+     * }
+     * ```
+     * @param saml2MetadataConfiguration custom configuration to configure the
+     * SAML2 relying party metadata endpoint
+     * @see [Saml2MetadataDsl]
+     * @since 6.1
+     */
+    fun saml2Metadata(saml2MetadataConfiguration: Saml2MetadataDsl.() -> Unit) {
+        val saml2MetadataCustomizer = Saml2MetadataDsl().apply(saml2MetadataConfiguration).get()
+        this.http.saml2Metadata(saml2MetadataCustomizer)
+    }
+
+    /**
      * Allows configuring how an anonymous user is represented.
      *
      * Example:
@@ -781,6 +940,68 @@ class HttpSecurityDsl(private val http: HttpSecurity, private val init: HttpSecu
     }
 
     /**
+     * Configures OIDC 1.0 logout support.
+     *
+     * Example:
+     *
+     * ```
+     * @Configuration
+     * @EnableWebSecurity
+     * class SecurityConfig {
+     *
+     *     @Bean
+     *     fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
+     *         http {
+     *             oauth2Login { }
+     *             oidcLogout {
+     *                 backChannel { }
+     *             }
+     *         }
+     *         return http.build()
+     *     }
+     * }
+     * ```
+     *
+     * @param oidcLogoutConfiguration custom configuration to configure the
+     * OIDC 1.0 logout support
+     * @see [OidcLogoutDsl]
+     */
+    fun oidcLogout(oidcLogoutConfiguration: OidcLogoutDsl.() -> Unit) {
+        val oidcLogoutCustomizer = OidcLogoutDsl().apply(oidcLogoutConfiguration).get()
+        this.http.oidcLogout(oidcLogoutCustomizer)
+    }
+
+    /**
+     * Configures One-Time Token Login Support.
+     *
+     * Example:
+     *
+     * ```
+     * @Configuration
+     * @EnableWebSecurity
+     * class SecurityConfig {
+     *
+     *    @Bean
+     *    fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
+     *        http {
+     *               oneTimeTokenLogin {
+     *                     oneTimeTokenGenerationSuccessHandler = MyMagicLinkOneTimeTokenGenerationSuccessHandler()
+     *                }
+     *             }
+     *        return http.build()
+     *       }
+     * }
+     *
+     * ```
+     * @since 6.4
+     * @param oneTimeTokenLoginConfiguration custom configuration to configure one-time token login
+     */
+    fun oneTimeTokenLogin(oneTimeTokenLoginConfiguration: OneTimeTokenLoginDsl.() -> Unit) {
+        val oneTimeTokenLoginCustomizer = OneTimeTokenLoginDsl().apply(oneTimeTokenLoginConfiguration).get()
+        this.http.oneTimeTokenLogin(oneTimeTokenLoginCustomizer)
+    }
+
+    /**
      * Configures Remember Me authentication.
      *
      * Example:
@@ -808,6 +1029,37 @@ class HttpSecurityDsl(private val http: HttpSecurity, private val init: HttpSecu
     fun rememberMe(rememberMeConfiguration: RememberMeDsl.() -> Unit) {
         val rememberMeCustomizer = RememberMeDsl().apply(rememberMeConfiguration).get()
         this.http.rememberMe(rememberMeCustomizer)
+    }
+
+    /**
+     * Enable WebAuthn configuration.
+     *
+     * Example:
+     *
+     * ```
+     * @Configuration
+     * @EnableWebSecurity
+     * class SecurityConfig {
+     *
+     *     @Bean
+     *     fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
+     *         http {
+     *             webAuthn {
+     *                 loginPage = "/log-in"
+     *             }
+     *         }
+     *         return http.build()
+     *     }
+     * }
+     * ```
+     *
+     * @param webAuthnConfiguration custom configurations to be applied
+     * to the WebAuthn authentication
+     * @see [WebAuthnDsl]
+     */
+    fun webAuthn(webAuthnConfiguration: WebAuthnDsl.() -> Unit) {
+        val webAuthnCustomizer = WebAuthnDsl().apply(webAuthnConfiguration).get()
+        this.http.webAuthn(webAuthnCustomizer)
     }
 
     /**
@@ -865,7 +1117,7 @@ class HttpSecurityDsl(private val http: HttpSecurity, private val init: HttpSecu
      * (i.e. known) with Spring Security.
      */
     @Suppress("DEPRECATION")
-    inline fun <reified T: Filter> addFilterAt(filter: Filter) {
+    inline fun <reified T : Filter> addFilterAt(filter: Filter) {
         this.addFilterAt(filter, T::class.java)
     }
 
@@ -924,7 +1176,7 @@ class HttpSecurityDsl(private val http: HttpSecurity, private val init: HttpSecu
      * (i.e. known) with Spring Security.
      */
     @Suppress("DEPRECATION")
-    inline fun <reified T: Filter> addFilterAfter(filter: Filter) {
+    inline fun <reified T : Filter> addFilterAfter(filter: Filter) {
         this.addFilterAfter(filter, T::class.java)
     }
 
@@ -983,7 +1235,7 @@ class HttpSecurityDsl(private val http: HttpSecurity, private val init: HttpSecu
      * (i.e. known) with Spring Security.
      */
     @Suppress("DEPRECATION")
-    inline fun <reified T: Filter> addFilterBefore(filter: Filter) {
+    inline fun <reified T : Filter> addFilterBefore(filter: Filter) {
         this.addFilterBefore(filter, T::class.java)
     }
 

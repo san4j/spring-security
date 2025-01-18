@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,9 +22,18 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
 import org.springframework.beans.factory.BeanFactoryUtils;
 import org.springframework.beans.factory.NoUniqueBeanDefinitionException;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.ApplicationListener;
+import org.springframework.context.event.GenericApplicationListenerAdapter;
+import org.springframework.context.event.SmartApplicationListener;
 import org.springframework.core.ResolvableType;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.config.Customizer;
@@ -32,9 +41,14 @@ import org.springframework.security.config.annotation.web.HttpSecurityBuilder;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractAuthenticationFilterConfigurer;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.annotation.web.configurers.SessionManagementConfigurer;
+import org.springframework.security.context.DelegatingApplicationListener;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.authority.mapping.GrantedAuthoritiesMapper;
+import org.springframework.security.core.session.AbstractSessionEvent;
+import org.springframework.security.core.session.SessionDestroyedEvent;
+import org.springframework.security.core.session.SessionIdChangedEvent;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
 import org.springframework.security.oauth2.client.authentication.OAuth2LoginAuthenticationProvider;
 import org.springframework.security.oauth2.client.authentication.OAuth2LoginAuthenticationToken;
@@ -42,6 +56,9 @@ import org.springframework.security.oauth2.client.endpoint.DefaultAuthorizationC
 import org.springframework.security.oauth2.client.endpoint.OAuth2AccessTokenResponseClient;
 import org.springframework.security.oauth2.client.endpoint.OAuth2AuthorizationCodeGrantRequest;
 import org.springframework.security.oauth2.client.oidc.authentication.OidcAuthorizationCodeAuthenticationProvider;
+import org.springframework.security.oauth2.client.oidc.session.InMemoryOidcSessionRegistry;
+import org.springframework.security.oauth2.client.oidc.session.OidcSessionInformation;
+import org.springframework.security.oauth2.client.oidc.session.OidcSessionRegistry;
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserRequest;
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
@@ -51,6 +68,7 @@ import org.springframework.security.oauth2.client.userinfo.OAuth2UserRequest;
 import org.springframework.security.oauth2.client.userinfo.OAuth2UserService;
 import org.springframework.security.oauth2.client.web.AuthenticatedPrincipalOAuth2AuthorizedClientRepository;
 import org.springframework.security.oauth2.client.web.AuthorizationRequestRepository;
+import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestRedirectFilter;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizedClientRepository;
@@ -67,7 +85,10 @@ import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.RedirectStrategy;
 import org.springframework.security.web.authentication.DelegatingAuthenticationEntryPoint;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
+import org.springframework.security.web.authentication.session.SessionAuthenticationException;
+import org.springframework.security.web.authentication.session.SessionAuthenticationStrategy;
 import org.springframework.security.web.authentication.ui.DefaultLoginPageGeneratingFilter;
+import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.savedrequest.RequestCache;
 import org.springframework.security.web.util.matcher.AndRequestMatcher;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
@@ -124,10 +145,12 @@ import org.springframework.util.ReflectionUtils;
  * <li>{@link DefaultLoginPageGeneratingFilter} - if {@link #loginPage(String)} is not
  * configured and {@code DefaultLoginPageGeneratingFilter} is available, then a default
  * login page will be made available</li>
+ * <li>{@link OidcSessionRegistry}</li>
  * </ul>
  *
  * @author Joe Grandja
  * @author Kazuki Shimizu
+ * @author Ngoc Nhan
  * @since 5.0
  * @see HttpSecurity#oauth2Login()
  * @see OAuth2AuthorizationRequestRedirectFilter
@@ -203,10 +226,25 @@ public final class OAuth2LoginConfigurer<B extends HttpSecurityBuilder<B>>
 	}
 
 	/**
+	 * Sets the registry for managing the OIDC client-provider session link
+	 * @param oidcSessionRegistry the {@link OidcSessionRegistry} to use
+	 * @return the {@link OAuth2LoginConfigurer} for further configuration
+	 * @since 6.2
+	 */
+	public OAuth2LoginConfigurer<B> oidcSessionRegistry(OidcSessionRegistry oidcSessionRegistry) {
+		Assert.notNull(oidcSessionRegistry, "oidcSessionRegistry cannot be null");
+		getBuilder().setSharedObject(OidcSessionRegistry.class, oidcSessionRegistry);
+		return this;
+	}
+
+	/**
 	 * Returns the {@link AuthorizationEndpointConfig} for configuring the Authorization
 	 * Server's Authorization Endpoint.
 	 * @return the {@link AuthorizationEndpointConfig}
+	 * @deprecated For removal in 7.0. Use {@link #authorizationEndpoint(Customizer)}
+	 * instead
 	 */
+	@Deprecated(since = "6.1", forRemoval = true)
 	public AuthorizationEndpointConfig authorizationEndpoint() {
 		return this.authorizationEndpointConfig;
 	}
@@ -227,7 +265,13 @@ public final class OAuth2LoginConfigurer<B extends HttpSecurityBuilder<B>>
 	 * Returns the {@link TokenEndpointConfig} for configuring the Authorization Server's
 	 * Token Endpoint.
 	 * @return the {@link TokenEndpointConfig}
+	 * @deprecated For removal in 7.0. Use {@link #tokenEndpoint(Customizer)} or
+	 * {@code tokenEndpoint(Customizer.withDefaults())} to stick with defaults. See the
+	 * <a href=
+	 * "https://docs.spring.io/spring-security/reference/migration-7/configuration.html#_use_the_lambda_dsl">documentation</a>
+	 * for more details.
 	 */
+	@Deprecated(since = "6.1", forRemoval = true)
 	public TokenEndpointConfig tokenEndpoint() {
 		return this.tokenEndpointConfig;
 	}
@@ -248,7 +292,10 @@ public final class OAuth2LoginConfigurer<B extends HttpSecurityBuilder<B>>
 	 * Returns the {@link RedirectionEndpointConfig} for configuring the Client's
 	 * Redirection Endpoint.
 	 * @return the {@link RedirectionEndpointConfig}
+	 * @deprecated For removal in 7.0. Use {@link #redirectionEndpoint(Customizer)}
+	 * instead
 	 */
+	@Deprecated(since = "6.1", forRemoval = true)
 	public RedirectionEndpointConfig redirectionEndpoint() {
 		return this.redirectionEndpointConfig;
 	}
@@ -269,7 +316,13 @@ public final class OAuth2LoginConfigurer<B extends HttpSecurityBuilder<B>>
 	 * Returns the {@link UserInfoEndpointConfig} for configuring the Authorization
 	 * Server's UserInfo Endpoint.
 	 * @return the {@link UserInfoEndpointConfig}
+	 * @deprecated For removal in 7.0. Use {@link #userInfoEndpoint(Customizer)} or
+	 * {@code userInfoEndpoint(Customizer.withDefaults())} to stick with defaults. See the
+	 * <a href=
+	 * "https://docs.spring.io/spring-security/reference/migration-7/configuration.html#_use_the_lambda_dsl">documentation</a>
+	 * for more details.
 	 */
+	@Deprecated(since = "6.1", forRemoval = true)
 	public UserInfoEndpointConfig userInfoEndpoint() {
 		return this.userInfoEndpointConfig;
 	}
@@ -290,6 +343,7 @@ public final class OAuth2LoginConfigurer<B extends HttpSecurityBuilder<B>>
 		OAuth2LoginAuthenticationFilter authenticationFilter = new OAuth2LoginAuthenticationFilter(
 				OAuth2ClientConfigurerUtils.getClientRegistrationRepository(this.getBuilder()),
 				OAuth2ClientConfigurerUtils.getAuthorizedClientRepository(this.getBuilder()), this.loginProcessingUrl);
+		authenticationFilter.setSecurityContextHolderStrategy(getSecurityContextHolderStrategy());
 		this.setAuthenticationFilter(authenticationFilter);
 		super.loginProcessingUrl(this.loginProcessingUrl);
 		if (this.loginPage != null) {
@@ -311,10 +365,7 @@ public final class OAuth2LoginConfigurer<B extends HttpSecurityBuilder<B>>
 				super.init(http);
 			}
 		}
-		OAuth2AccessTokenResponseClient<OAuth2AuthorizationCodeGrantRequest> accessTokenResponseClient = this.tokenEndpointConfig.accessTokenResponseClient;
-		if (accessTokenResponseClient == null) {
-			accessTokenResponseClient = new DefaultAuthorizationCodeTokenResponseClient();
-		}
+		OAuth2AccessTokenResponseClient<OAuth2AuthorizationCodeGrantRequest> accessTokenResponseClient = getAccessTokenResponseClient();
 		OAuth2UserService<OAuth2UserRequest, OAuth2User> oauth2UserService = getOAuth2UserService();
 		OAuth2LoginAuthenticationProvider oauth2LoginAuthenticationProvider = new OAuth2LoginAuthenticationProvider(
 				accessTokenResponseClient, oauth2UserService);
@@ -324,7 +375,7 @@ public final class OAuth2LoginConfigurer<B extends HttpSecurityBuilder<B>>
 		}
 		http.authenticationProvider(this.postProcess(oauth2LoginAuthenticationProvider));
 		boolean oidcAuthenticationProviderEnabled = ClassUtils
-				.isPresent("org.springframework.security.oauth2.jwt.JwtDecoder", this.getClass().getClassLoader());
+			.isPresent("org.springframework.security.oauth2.jwt.JwtDecoder", this.getClass().getClassLoader());
 		if (oidcAuthenticationProviderEnabled) {
 			OAuth2UserService<OidcUserRequest, OidcUser> oidcUserService = getOidcUserService();
 			OidcAuthorizationCodeAuthenticationProvider oidcAuthorizationCodeAuthenticationProvider = new OidcAuthorizationCodeAuthenticationProvider(
@@ -346,27 +397,15 @@ public final class OAuth2LoginConfigurer<B extends HttpSecurityBuilder<B>>
 
 	@Override
 	public void configure(B http) throws Exception {
-		OAuth2AuthorizationRequestRedirectFilter authorizationRequestFilter;
-		if (this.authorizationEndpointConfig.authorizationRequestResolver != null) {
-			authorizationRequestFilter = new OAuth2AuthorizationRequestRedirectFilter(
-					this.authorizationEndpointConfig.authorizationRequestResolver);
-		}
-		else {
-			String authorizationRequestBaseUri = this.authorizationEndpointConfig.authorizationRequestBaseUri;
-			if (authorizationRequestBaseUri == null) {
-				authorizationRequestBaseUri = OAuth2AuthorizationRequestRedirectFilter.DEFAULT_AUTHORIZATION_REQUEST_BASE_URI;
-			}
-			authorizationRequestFilter = new OAuth2AuthorizationRequestRedirectFilter(
-					OAuth2ClientConfigurerUtils.getClientRegistrationRepository(this.getBuilder()),
-					authorizationRequestBaseUri);
-		}
+		OAuth2AuthorizationRequestRedirectFilter authorizationRequestFilter = new OAuth2AuthorizationRequestRedirectFilter(
+				getAuthorizationRequestResolver());
 		if (this.authorizationEndpointConfig.authorizationRequestRepository != null) {
 			authorizationRequestFilter
-					.setAuthorizationRequestRepository(this.authorizationEndpointConfig.authorizationRequestRepository);
+				.setAuthorizationRequestRepository(this.authorizationEndpointConfig.authorizationRequestRepository);
 		}
 		if (this.authorizationEndpointConfig.authorizationRedirectStrategy != null) {
 			authorizationRequestFilter
-					.setAuthorizationRedirectStrategy(this.authorizationEndpointConfig.authorizationRedirectStrategy);
+				.setAuthorizationRedirectStrategy(this.authorizationEndpointConfig.authorizationRedirectStrategy);
 		}
 		RequestCache requestCache = http.getSharedObject(RequestCache.class);
 		if (requestCache != null) {
@@ -379,14 +418,33 @@ public final class OAuth2LoginConfigurer<B extends HttpSecurityBuilder<B>>
 		}
 		if (this.authorizationEndpointConfig.authorizationRequestRepository != null) {
 			authenticationFilter
-					.setAuthorizationRequestRepository(this.authorizationEndpointConfig.authorizationRequestRepository);
+				.setAuthorizationRequestRepository(this.authorizationEndpointConfig.authorizationRequestRepository);
 		}
+		configureOidcSessionRegistry(http);
 		super.configure(http);
 	}
 
 	@Override
 	protected RequestMatcher createLoginProcessingUrlMatcher(String loginProcessingUrl) {
 		return new AntPathRequestMatcher(loginProcessingUrl);
+	}
+
+	private OAuth2AuthorizationRequestResolver getAuthorizationRequestResolver() {
+		if (this.authorizationEndpointConfig.authorizationRequestResolver != null) {
+			return this.authorizationEndpointConfig.authorizationRequestResolver;
+		}
+		ClientRegistrationRepository clientRegistrationRepository = OAuth2ClientConfigurerUtils
+			.getClientRegistrationRepository(getBuilder());
+		ResolvableType resolvableType = ResolvableType.forClass(OAuth2AuthorizationRequestResolver.class);
+		OAuth2AuthorizationRequestResolver bean = getBeanOrNull(resolvableType);
+		if (bean != null) {
+			return bean;
+		}
+		String authorizationRequestBaseUri = this.authorizationEndpointConfig.authorizationRequestBaseUri;
+		if (authorizationRequestBaseUri == null) {
+			authorizationRequestBaseUri = OAuth2AuthorizationRequestRedirectFilter.DEFAULT_AUTHORIZATION_REQUEST_BASE_URI;
+		}
+		return new DefaultOAuth2AuthorizationRequestResolver(clientRegistrationRepository, authorizationRequestBaseUri);
 	}
 
 	@SuppressWarnings("unchecked")
@@ -396,16 +454,15 @@ public final class OAuth2LoginConfigurer<B extends HttpSecurityBuilder<B>>
 		if (names.length > 1) {
 			throw new NoUniqueBeanDefinitionException(type, names);
 		}
-		if (names.length == 1) {
-			return (JwtDecoderFactory<ClientRegistration>) this.getBuilder().getSharedObject(ApplicationContext.class)
-					.getBean(names[0]);
-		}
-		return null;
+		return (JwtDecoderFactory<ClientRegistration>) this.getBuilder()
+			.getSharedObject(ApplicationContext.class)
+			.getBeanProvider(type)
+			.getIfUnique();
 	}
 
 	private GrantedAuthoritiesMapper getGrantedAuthoritiesMapper() {
 		GrantedAuthoritiesMapper grantedAuthoritiesMapper = this.getBuilder()
-				.getSharedObject(GrantedAuthoritiesMapper.class);
+			.getSharedObject(GrantedAuthoritiesMapper.class);
 		if (grantedAuthoritiesMapper == null) {
 			grantedAuthoritiesMapper = this.getGrantedAuthoritiesMapperBean();
 			if (grantedAuthoritiesMapper != null) {
@@ -417,9 +474,19 @@ public final class OAuth2LoginConfigurer<B extends HttpSecurityBuilder<B>>
 
 	private GrantedAuthoritiesMapper getGrantedAuthoritiesMapperBean() {
 		Map<String, GrantedAuthoritiesMapper> grantedAuthoritiesMapperMap = BeanFactoryUtils
-				.beansOfTypeIncludingAncestors(this.getBuilder().getSharedObject(ApplicationContext.class),
-						GrantedAuthoritiesMapper.class);
+			.beansOfTypeIncludingAncestors(this.getBuilder().getSharedObject(ApplicationContext.class),
+					GrantedAuthoritiesMapper.class);
 		return (!grantedAuthoritiesMapperMap.isEmpty() ? grantedAuthoritiesMapperMap.values().iterator().next() : null);
+	}
+
+	private OAuth2AccessTokenResponseClient<OAuth2AuthorizationCodeGrantRequest> getAccessTokenResponseClient() {
+		if (this.tokenEndpointConfig.accessTokenResponseClient != null) {
+			return this.tokenEndpointConfig.accessTokenResponseClient;
+		}
+		ResolvableType resolvableType = ResolvableType.forClassWithGenerics(OAuth2AccessTokenResponseClient.class,
+				OAuth2AuthorizationCodeGrantRequest.class);
+		OAuth2AccessTokenResponseClient<OAuth2AuthorizationCodeGrantRequest> bean = getBeanOrNull(resolvableType);
+		return (bean != null) ? bean : new DefaultAuthorizationCodeTokenResponseClient();
 	}
 
 	private OAuth2UserService<OidcUserRequest, OidcUser> getOidcUserService() {
@@ -442,20 +509,18 @@ public final class OAuth2LoginConfigurer<B extends HttpSecurityBuilder<B>>
 		return (bean != null) ? bean : new DefaultOAuth2UserService();
 	}
 
+	@SuppressWarnings("unchecked")
 	private <T> T getBeanOrNull(ResolvableType type) {
 		ApplicationContext context = getBuilder().getSharedObject(ApplicationContext.class);
-		if (context != null) {
-			String[] names = context.getBeanNamesForType(type);
-			if (names.length == 1) {
-				return (T) context.getBean(names[0]);
-			}
+		if (context == null) {
+			return null;
 		}
-		return null;
+		return (T) context.getBeanProvider(type).getIfUnique();
 	}
 
 	private void initDefaultLoginFilter(B http) {
 		DefaultLoginPageGeneratingFilter loginPageGeneratingFilter = http
-				.getSharedObject(DefaultLoginPageGeneratingFilter.class);
+			.getSharedObject(DefaultLoginPageGeneratingFilter.class);
 		if (loginPageGeneratingFilter == null || this.isCustomLoginPage()) {
 			return;
 		}
@@ -469,7 +534,7 @@ public final class OAuth2LoginConfigurer<B extends HttpSecurityBuilder<B>>
 	private Map<String, String> getLoginLinks() {
 		Iterable<ClientRegistration> clientRegistrations = null;
 		ClientRegistrationRepository clientRegistrationRepository = OAuth2ClientConfigurerUtils
-				.getClientRegistrationRepository(this.getBuilder());
+			.getClientRegistrationRepository(this.getBuilder());
 		ResolvableType type = ResolvableType.forInstance(clientRegistrationRepository).as(Iterable.class);
 		if (type != ResolvableType.NONE && ClientRegistration.class.isAssignableFrom(type.resolveGenerics()[0])) {
 			clientRegistrations = (Iterable<ClientRegistration>) clientRegistrationRepository;
@@ -509,15 +574,42 @@ public final class OAuth2LoginConfigurer<B extends HttpSecurityBuilder<B>>
 
 	private RequestMatcher getFormLoginNotEnabledRequestMatcher(B http) {
 		DefaultLoginPageGeneratingFilter defaultLoginPageGeneratingFilter = http
-				.getSharedObject(DefaultLoginPageGeneratingFilter.class);
+			.getSharedObject(DefaultLoginPageGeneratingFilter.class);
 		Field formLoginEnabledField = (defaultLoginPageGeneratingFilter != null)
 				? ReflectionUtils.findField(DefaultLoginPageGeneratingFilter.class, "formLoginEnabled") : null;
 		if (formLoginEnabledField != null) {
 			ReflectionUtils.makeAccessible(formLoginEnabledField);
 			return (request) -> Boolean.FALSE
-					.equals(ReflectionUtils.getField(formLoginEnabledField, defaultLoginPageGeneratingFilter));
+				.equals(ReflectionUtils.getField(formLoginEnabledField, defaultLoginPageGeneratingFilter));
 		}
 		return AnyRequestMatcher.INSTANCE;
+	}
+
+	private void configureOidcSessionRegistry(B http) {
+		if (http.getConfigurer(OidcLogoutConfigurer.class) == null
+				&& http.getSharedObject(OidcSessionRegistry.class) == null) {
+			return;
+		}
+		OidcSessionRegistry sessionRegistry = OAuth2ClientConfigurerUtils.getOidcSessionRegistry(http);
+		SessionManagementConfigurer<B> sessionConfigurer = http.getConfigurer(SessionManagementConfigurer.class);
+		if (sessionConfigurer != null) {
+			OidcSessionRegistryAuthenticationStrategy sessionAuthenticationStrategy = new OidcSessionRegistryAuthenticationStrategy();
+			sessionAuthenticationStrategy.setSessionRegistry(sessionRegistry);
+			sessionConfigurer.addSessionAuthenticationStrategy(sessionAuthenticationStrategy);
+		}
+		OidcClientSessionEventListener listener = new OidcClientSessionEventListener();
+		listener.setSessionRegistry(sessionRegistry);
+		registerDelegateApplicationListener(listener);
+	}
+
+	private void registerDelegateApplicationListener(ApplicationListener<?> delegate) {
+		DelegatingApplicationListener delegating = getBeanOrNull(
+				ResolvableType.forType(DelegatingApplicationListener.class));
+		if (delegating == null) {
+			return;
+		}
+		SmartApplicationListener smartListener = new GenericApplicationListenerAdapter(delegate);
+		delegating.addListener(smartListener);
 	}
 
 	/**
@@ -589,7 +681,10 @@ public final class OAuth2LoginConfigurer<B extends HttpSecurityBuilder<B>>
 		/**
 		 * Returns the {@link OAuth2LoginConfigurer} for further configuration.
 		 * @return the {@link OAuth2LoginConfigurer}
+		 * @deprecated For removal in 7.0. Use {@link #authorizationEndpoint(Customizer)}
+		 * instead
 		 */
+		@Deprecated(since = "6.1", forRemoval = true)
 		public OAuth2LoginConfigurer<B> and() {
 			return OAuth2LoginConfigurer.this;
 		}
@@ -623,7 +718,13 @@ public final class OAuth2LoginConfigurer<B extends HttpSecurityBuilder<B>>
 		/**
 		 * Returns the {@link OAuth2LoginConfigurer} for further configuration.
 		 * @return the {@link OAuth2LoginConfigurer}
+		 * @deprecated For removal in 7.0. Use {@link #tokenEndpoint(Customizer)} or
+		 * {@code tokenEndpoint(Customizer.withDefaults())} to stick with defaults. See
+		 * the <a href=
+		 * "https://docs.spring.io/spring-security/reference/migration-7/configuration.html#_use_the_lambda_dsl">documentation</a>
+		 * for more details.
 		 */
+		@Deprecated(since = "6.1", forRemoval = true)
 		public OAuth2LoginConfigurer<B> and() {
 			return OAuth2LoginConfigurer.this;
 		}
@@ -655,7 +756,10 @@ public final class OAuth2LoginConfigurer<B extends HttpSecurityBuilder<B>>
 		/**
 		 * Returns the {@link OAuth2LoginConfigurer} for further configuration.
 		 * @return the {@link OAuth2LoginConfigurer}
+		 * @deprecated For removal in 7.0. Use {@link #redirectionEndpoint(Customizer)}
+		 * instead
 		 */
+		@Deprecated(since = "6.1", forRemoval = true)
 		public OAuth2LoginConfigurer<B> and() {
 			return OAuth2LoginConfigurer.this;
 		}
@@ -709,15 +813,18 @@ public final class OAuth2LoginConfigurer<B extends HttpSecurityBuilder<B>>
 		 */
 		public UserInfoEndpointConfig userAuthoritiesMapper(GrantedAuthoritiesMapper userAuthoritiesMapper) {
 			Assert.notNull(userAuthoritiesMapper, "userAuthoritiesMapper cannot be null");
-			OAuth2LoginConfigurer.this.getBuilder().setSharedObject(GrantedAuthoritiesMapper.class,
-					userAuthoritiesMapper);
+			OAuth2LoginConfigurer.this.getBuilder()
+				.setSharedObject(GrantedAuthoritiesMapper.class, userAuthoritiesMapper);
 			return this;
 		}
 
 		/**
 		 * Returns the {@link OAuth2LoginConfigurer} for further configuration.
 		 * @return the {@link OAuth2LoginConfigurer}
+		 * @deprecated For removal in 7.0. Use {@link #userInfoEndpoint(Customizer)}
+		 * instead
 		 */
+		@Deprecated(since = "6.1", forRemoval = true)
 		public OAuth2LoginConfigurer<B> and() {
 			return OAuth2LoginConfigurer.this;
 		}
@@ -730,7 +837,7 @@ public final class OAuth2LoginConfigurer<B extends HttpSecurityBuilder<B>>
 		public Authentication authenticate(Authentication authentication) throws AuthenticationException {
 			OAuth2LoginAuthenticationToken authorizationCodeAuthentication = (OAuth2LoginAuthenticationToken) authentication;
 			OAuth2AuthorizationRequest authorizationRequest = authorizationCodeAuthentication.getAuthorizationExchange()
-					.getAuthorizationRequest();
+				.getAuthorizationRequest();
 			if (authorizationRequest.getScopes().contains(OidcScopes.OPENID)) {
 				// Section 3.1.2.1 Authentication Request -
 				// https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest scope
@@ -748,6 +855,90 @@ public final class OAuth2LoginConfigurer<B extends HttpSecurityBuilder<B>>
 		@Override
 		public boolean supports(Class<?> authentication) {
 			return OAuth2LoginAuthenticationToken.class.isAssignableFrom(authentication);
+		}
+
+	}
+
+	private static final class OidcClientSessionEventListener implements ApplicationListener<AbstractSessionEvent> {
+
+		private final Log logger = LogFactory.getLog(OidcClientSessionEventListener.class);
+
+		private OidcSessionRegistry sessionRegistry = new InMemoryOidcSessionRegistry();
+
+		/**
+		 * {@inheritDoc}
+		 */
+		@Override
+		public void onApplicationEvent(AbstractSessionEvent event) {
+			if (event instanceof SessionDestroyedEvent destroyed) {
+				this.logger.debug("Received SessionDestroyedEvent");
+				this.sessionRegistry.removeSessionInformation(destroyed.getId());
+				return;
+			}
+			if (event instanceof SessionIdChangedEvent changed) {
+				this.logger.debug("Received SessionIdChangedEvent");
+				OidcSessionInformation information = this.sessionRegistry
+					.removeSessionInformation(changed.getOldSessionId());
+				if (information == null) {
+					this.logger
+						.debug("Failed to register new session id since old session id was not found in registry");
+					return;
+				}
+				this.sessionRegistry.saveSessionInformation(information.withSessionId(changed.getNewSessionId()));
+			}
+		}
+
+		/**
+		 * The registry where OIDC Provider sessions are linked to the Client session.
+		 * Defaults to in-memory storage.
+		 * @param sessionRegistry the {@link OidcSessionRegistry} to use
+		 */
+		void setSessionRegistry(OidcSessionRegistry sessionRegistry) {
+			Assert.notNull(sessionRegistry, "sessionRegistry cannot be null");
+			this.sessionRegistry = sessionRegistry;
+		}
+
+	}
+
+	private static final class OidcSessionRegistryAuthenticationStrategy implements SessionAuthenticationStrategy {
+
+		private final Log logger = LogFactory.getLog(getClass());
+
+		private OidcSessionRegistry sessionRegistry = new InMemoryOidcSessionRegistry();
+
+		/**
+		 * {@inheritDoc}
+		 */
+		@Override
+		public void onAuthentication(Authentication authentication, HttpServletRequest request,
+				HttpServletResponse response) throws SessionAuthenticationException {
+			HttpSession session = request.getSession(false);
+			if (session == null) {
+				return;
+			}
+			if (!(authentication.getPrincipal() instanceof OidcUser user)) {
+				return;
+			}
+			String sessionId = session.getId();
+			CsrfToken csrfToken = (CsrfToken) request.getAttribute(CsrfToken.class.getName());
+			Map<String, String> headers = (csrfToken != null) ? Map.of(csrfToken.getHeaderName(), csrfToken.getToken())
+					: Collections.emptyMap();
+			OidcSessionInformation registration = new OidcSessionInformation(sessionId, headers, user);
+			if (this.logger.isTraceEnabled()) {
+				this.logger
+					.trace(String.format("Linking a provider [%s] session to this client's session", user.getIssuer()));
+			}
+			this.sessionRegistry.saveSessionInformation(registration);
+		}
+
+		/**
+		 * The registration for linking OIDC Provider Session information to the Client's
+		 * session. Defaults to in-memory storage.
+		 * @param sessionRegistry the {@link OidcSessionRegistry} to use
+		 */
+		void setSessionRegistry(OidcSessionRegistry sessionRegistry) {
+			Assert.notNull(sessionRegistry, "sessionRegistry cannot be null");
+			this.sessionRegistry = sessionRegistry;
 		}
 
 	}

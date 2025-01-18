@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import java.util.Map;
 
 import jakarta.servlet.Filter;
 
-import org.springframework.beans.factory.BeanClassLoaderAware;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
@@ -37,9 +37,11 @@ import org.springframework.core.annotation.AnnotationUtils;
 import org.springframework.core.annotation.Order;
 import org.springframework.core.type.AnnotationMetadata;
 import org.springframework.security.access.expression.SecurityExpressionHandler;
-import org.springframework.security.config.annotation.ObjectPostProcessor;
+import org.springframework.security.config.Customizer;
+import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.config.annotation.SecurityConfigurer;
 import org.springframework.security.config.annotation.web.WebSecurityConfigurer;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.builders.WebSecurity;
 import org.springframework.security.config.crypto.RsaKeyConversionServicePostProcessor;
 import org.springframework.security.context.DelegatingApplicationListener;
@@ -48,7 +50,6 @@ import org.springframework.security.web.FilterInvocation;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.WebInvocationPrivilegeEvaluator;
 import org.springframework.security.web.context.AbstractSecurityWebApplicationInitializer;
-import org.springframework.util.Assert;
 
 /**
  * Uses a {@link WebSecurity} to create the {@link FilterChainProxy} that performs the web
@@ -64,22 +65,15 @@ import org.springframework.util.Assert;
  * @see WebSecurity
  */
 @Configuration(proxyBeanMethods = false)
-public class WebSecurityConfiguration implements ImportAware, BeanClassLoaderAware {
+public class WebSecurityConfiguration implements ImportAware {
 
 	private WebSecurity webSecurity;
 
 	private Boolean debugEnabled;
 
-	private List<SecurityConfigurer<Filter, WebSecurity>> webSecurityConfigurers;
-
 	private List<SecurityFilterChain> securityFilterChains = Collections.emptyList();
 
 	private List<WebSecurityCustomizer> webSecurityCustomizers = Collections.emptyList();
-
-	private ClassLoader beanClassLoader;
-
-	@Autowired(required = false)
-	private ObjectPostProcessor<Object> objectObjectPostProcessor;
 
 	@Bean
 	public static DelegatingApplicationListener delegatingApplicationListener() {
@@ -98,16 +92,16 @@ public class WebSecurityConfiguration implements ImportAware, BeanClassLoaderAwa
 	 * @throws Exception
 	 */
 	@Bean(name = AbstractSecurityWebApplicationInitializer.DEFAULT_FILTER_NAME)
-	public Filter springSecurityFilterChain() throws Exception {
-		boolean hasConfigurers = this.webSecurityConfigurers != null && !this.webSecurityConfigurers.isEmpty();
+	public Filter springSecurityFilterChain(ObjectProvider<HttpSecurity> provider) throws Exception {
 		boolean hasFilterChain = !this.securityFilterChains.isEmpty();
-		Assert.state(!(hasConfigurers && hasFilterChain),
-				"Found WebSecurityConfigurerAdapter as well as SecurityFilterChain. Please select just one.");
-		if (!hasConfigurers && !hasFilterChain) {
-			WebSecurityConfigurerAdapter adapter = this.objectObjectPostProcessor
-					.postProcess(new WebSecurityConfigurerAdapter() {
-					});
-			this.webSecurity.apply(adapter);
+		if (!hasFilterChain) {
+			this.webSecurity.addSecurityFilterChainBuilder(() -> {
+				HttpSecurity httpSecurity = provider.getObject();
+				httpSecurity.authorizeHttpRequests((authorize) -> authorize.anyRequest().authenticated());
+				httpSecurity.formLogin(Customizer.withDefaults());
+				httpSecurity.httpBasic(Customizer.withDefaults());
+				return httpSecurity.build();
+			});
 		}
 		for (SecurityFilterChain securityFilterChain : this.securityFilterChains) {
 			this.webSecurity.addSecurityFilterChainBuilder(() -> securityFilterChain);
@@ -147,7 +141,8 @@ public class WebSecurityConfiguration implements ImportAware, BeanClassLoaderAwa
 			this.webSecurity.debug(this.debugEnabled);
 		}
 		List<SecurityConfigurer<Filter, WebSecurity>> webSecurityConfigurers = new AutowiredWebSecurityConfigurersIgnoreParents(
-				beanFactory).getWebSecurityConfigurers();
+				beanFactory)
+			.getWebSecurityConfigurers();
 		webSecurityConfigurers.sort(AnnotationAwareOrderComparator.INSTANCE);
 		Integer previousOrder = null;
 		Object previousConfig = null;
@@ -163,7 +158,6 @@ public class WebSecurityConfiguration implements ImportAware, BeanClassLoaderAwa
 		for (SecurityConfigurer<Filter, WebSecurity> webSecurityConfigurer : webSecurityConfigurers) {
 			this.webSecurity.apply(webSecurityConfigurer);
 		}
-		this.webSecurityConfigurers = webSecurityConfigurers;
 	}
 
 	@Autowired(required = false)
@@ -184,17 +178,12 @@ public class WebSecurityConfiguration implements ImportAware, BeanClassLoaderAwa
 	@Override
 	public void setImportMetadata(AnnotationMetadata importMetadata) {
 		Map<String, Object> enableWebSecurityAttrMap = importMetadata
-				.getAnnotationAttributes(EnableWebSecurity.class.getName());
+			.getAnnotationAttributes(EnableWebSecurity.class.getName());
 		AnnotationAttributes enableWebSecurityAttrs = AnnotationAttributes.fromMap(enableWebSecurityAttrMap);
 		this.debugEnabled = enableWebSecurityAttrs.getBoolean("debug");
 		if (this.webSecurity != null) {
 			this.webSecurity.debug(this.debugEnabled);
 		}
-	}
-
-	@Override
-	public void setBeanClassLoader(ClassLoader classLoader) {
-		this.beanClassLoader = classLoader;
 	}
 
 	/**

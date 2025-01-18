@@ -26,9 +26,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import org.springframework.aop.Pointcut;
-import org.springframework.aop.PointcutAdvisor;
-import org.springframework.aop.framework.AopInfrastructureBean;
-import org.springframework.core.Ordered;
 import org.springframework.core.ReactiveAdapter;
 import org.springframework.core.ReactiveAdapterRegistry;
 import org.springframework.expression.EvaluationContext;
@@ -36,6 +33,7 @@ import org.springframework.security.access.expression.method.DefaultMethodSecuri
 import org.springframework.security.access.expression.method.MethodSecurityExpressionHandler;
 import org.springframework.security.access.expression.method.MethodSecurityExpressionOperations;
 import org.springframework.security.access.prepost.PostFilter;
+import org.springframework.security.core.annotation.AnnotationTemplateExpressionDefaults;
 import org.springframework.util.Assert;
 
 /**
@@ -46,10 +44,9 @@ import org.springframework.util.Assert;
  * @author Evgeniy Cheban
  * @since 5.8
  */
-public final class PostFilterAuthorizationReactiveMethodInterceptor
-		implements Ordered, MethodInterceptor, PointcutAdvisor, AopInfrastructureBean {
+public final class PostFilterAuthorizationReactiveMethodInterceptor implements AuthorizationAdvisor {
 
-	private final PostFilterExpressionAttributeRegistry registry;
+	private final PostFilterExpressionAttributeRegistry registry = new PostFilterExpressionAttributeRegistry();
 
 	private final Pointcut pointcut = AuthorizationMethodPointcuts.forAnnotations(PostFilter.class);
 
@@ -67,7 +64,31 @@ public final class PostFilterAuthorizationReactiveMethodInterceptor
 	 */
 	public PostFilterAuthorizationReactiveMethodInterceptor(MethodSecurityExpressionHandler expressionHandler) {
 		Assert.notNull(expressionHandler, "expressionHandler cannot be null");
-		this.registry = new PostFilterExpressionAttributeRegistry(expressionHandler);
+		this.registry.setExpressionHandler(expressionHandler);
+	}
+
+	/**
+	 * Configure pre/post-authorization template resolution
+	 * <p>
+	 * By default, this value is <code>null</code>, which indicates that templates should
+	 * not be resolved.
+	 * @param defaults - whether to resolve pre/post-authorization templates parameters
+	 * @since 6.3
+	 */
+	public void setTemplateDefaults(PrePostTemplateDefaults defaults) {
+		this.registry.setTemplateDefaults(defaults);
+	}
+
+	/**
+	 * Configure pre/post-authorization template resolution
+	 * <p>
+	 * By default, this value is <code>null</code>, which indicates that templates should
+	 * not be resolved.
+	 * @param defaults - whether to resolve pre/post-authorization templates parameters
+	 * @since 6.4
+	 */
+	public void setTemplateDefaults(AnnotationTemplateExpressionDefaults defaults) {
+		this.registry.setTemplateDefaults(defaults);
 	}
 
 	/**
@@ -83,12 +104,15 @@ public final class PostFilterAuthorizationReactiveMethodInterceptor
 			return ReactiveMethodInvocationUtils.proceed(mi);
 		}
 		Mono<EvaluationContext> toInvoke = ReactiveAuthenticationUtils.getAuthentication()
-				.map((auth) -> this.registry.getExpressionHandler().createEvaluationContext(auth, mi));
+			.map((auth) -> this.registry.getExpressionHandler().createEvaluationContext(auth, mi));
 		Method method = mi.getMethod();
 		Class<?> type = method.getReturnType();
-		Assert.state(Publisher.class.isAssignableFrom(type),
-				() -> String.format("The parameter type %s on %s must be an instance of org.reactivestreams.Publisher "
-						+ "(for example, a Mono or Flux) in order to support Reactor Context", type, method));
+		Assert
+			.state(Publisher.class.isAssignableFrom(type),
+					() -> String.format(
+							"The parameter type %s on %s must be an instance of org.reactivestreams.Publisher "
+									+ "(for example, a Mono or Flux) in order to support Reactor Context",
+							type, method));
 		ReactiveAdapter adapter = ReactiveAdapterRegistry.getSharedInstance().getAdapter(type);
 		if (isMultiValue(type, adapter)) {
 			Publisher<?> publisher = Flux.defer(() -> ReactiveMethodInvocationUtils.proceed(mi));
@@ -108,13 +132,15 @@ public final class PostFilterAuthorizationReactiveMethodInterceptor
 	}
 
 	private Mono<?> filterSingleValue(Publisher<?> publisher, EvaluationContext ctx, ExpressionAttribute attribute) {
-		return Mono.from(publisher).doOnNext((result) -> setFilterObject(ctx, result))
-				.flatMap((result) -> postFilter(ctx, result, attribute));
+		return Mono.from(publisher)
+			.doOnNext((result) -> setFilterObject(ctx, result))
+			.flatMap((result) -> postFilter(ctx, result, attribute));
 	}
 
 	private Flux<?> filterMultiValue(Publisher<?> publisher, EvaluationContext ctx, ExpressionAttribute attribute) {
-		return Flux.from(publisher).doOnNext((result) -> setFilterObject(ctx, result))
-				.flatMap((result) -> postFilter(ctx, result, attribute));
+		return Flux.from(publisher)
+			.doOnNext((result) -> setFilterObject(ctx, result))
+			.flatMap((result) -> postFilter(ctx, result, attribute));
 	}
 
 	private void setFilterObject(EvaluationContext ctx, Object result) {
@@ -123,7 +149,7 @@ public final class PostFilterAuthorizationReactiveMethodInterceptor
 
 	private Mono<?> postFilter(EvaluationContext ctx, Object result, ExpressionAttribute attribute) {
 		return ReactiveExpressionUtils.evaluateAsBoolean(attribute.getExpression(), ctx)
-				.flatMap((granted) -> granted ? Mono.just(result) : Mono.empty());
+			.flatMap((granted) -> granted ? Mono.just(result) : Mono.empty());
 	}
 
 	@Override

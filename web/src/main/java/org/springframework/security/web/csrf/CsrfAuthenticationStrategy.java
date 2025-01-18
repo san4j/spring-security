@@ -32,44 +32,44 @@ import org.springframework.util.Assert;
  * the next request.
  *
  * @author Rob Winch
+ * @author Steve Riesenberg
  * @since 3.2
  */
 public final class CsrfAuthenticationStrategy implements SessionAuthenticationStrategy {
 
 	private final Log logger = LogFactory.getLog(getClass());
 
-	private final CsrfTokenRepository csrfTokenRepository;
+	private final CsrfTokenRepository tokenRepository;
 
-	private CsrfTokenRequestAttributeHandler requestAttributeHandler = new CsrfTokenRequestProcessor();
+	private CsrfTokenRequestHandler requestHandler = new XorCsrfTokenRequestAttributeHandler();
 
 	/**
 	 * Creates a new instance
-	 * @param csrfTokenRepository the {@link CsrfTokenRepository} to use
+	 * @param tokenRepository the {@link CsrfTokenRepository} to use
 	 */
-	public CsrfAuthenticationStrategy(CsrfTokenRepository csrfTokenRepository) {
-		Assert.notNull(csrfTokenRepository, "csrfTokenRepository cannot be null");
-		this.csrfTokenRepository = csrfTokenRepository;
+	public CsrfAuthenticationStrategy(CsrfTokenRepository tokenRepository) {
+		Assert.notNull(tokenRepository, "tokenRepository cannot be null");
+		this.tokenRepository = tokenRepository;
 	}
 
 	/**
-	 * Specify a {@link CsrfTokenRequestAttributeHandler} to use for making the
-	 * {@code CsrfToken} available as a request attribute.
-	 * @param requestAttributeHandler the {@link CsrfTokenRequestAttributeHandler} to use
+	 * Specify a {@link CsrfTokenRequestHandler} to use for making the {@code CsrfToken}
+	 * available as a request attribute.
+	 * @param requestHandler the {@link CsrfTokenRequestHandler} to use
 	 */
-	public void setRequestAttributeHandler(CsrfTokenRequestAttributeHandler requestAttributeHandler) {
-		Assert.notNull(requestAttributeHandler, "requestAttributeHandler cannot be null");
-		this.requestAttributeHandler = requestAttributeHandler;
+	public void setRequestHandler(CsrfTokenRequestHandler requestHandler) {
+		Assert.notNull(requestHandler, "requestHandler cannot be null");
+		this.requestHandler = requestHandler;
 	}
 
 	@Override
 	public void onAuthentication(Authentication authentication, HttpServletRequest request,
 			HttpServletResponse response) throws SessionAuthenticationException {
-		boolean containsToken = this.csrfTokenRepository.loadToken(request) != null;
+		boolean containsToken = this.tokenRepository.loadToken(request) != null;
 		if (containsToken) {
-			this.csrfTokenRepository.saveToken(null, request, response);
-			CsrfToken newToken = this.csrfTokenRepository.generateToken(request);
-			this.csrfTokenRepository.saveToken(newToken, request, response);
-			this.requestAttributeHandler.handle(request, response, () -> newToken);
+			this.tokenRepository.saveToken(null, request, response);
+			DeferredCsrfToken deferredCsrfToken = this.tokenRepository.loadDeferredToken(request, response);
+			this.requestHandler.handle(request, response, deferredCsrfToken::get);
 			this.logger.debug("Replaced CSRF Token");
 		}
 	}

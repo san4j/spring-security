@@ -20,10 +20,10 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.gargoylesoftware.htmlunit.WebRequest;
-import com.gargoylesoftware.htmlunit.WebResponse;
-import com.gargoylesoftware.htmlunit.WebResponseData;
-import com.gargoylesoftware.htmlunit.util.NameValuePair;
+import org.htmlunit.WebRequest;
+import org.htmlunit.WebResponse;
+import org.htmlunit.WebResponseData;
+import org.htmlunit.util.NameValuePair;
 
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -67,7 +67,7 @@ final class MockWebResponseBuilder {
 		HttpHeaders responseHeaders = this.exchangeResult.getResponseHeaders();
 		List<NameValuePair> result = new ArrayList<>(responseHeaders.size());
 		responseHeaders.forEach((headerName, headerValues) -> headerValues
-				.forEach((headerValue) -> result.add(new NameValuePair(headerName, headerValue))));
+			.forEach((headerValue) -> result.add(new NameValuePair(headerName, headerValue))));
 		return result;
 	}
 

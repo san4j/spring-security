@@ -104,7 +104,17 @@ import org.springframework.util.CollectionUtils;
  *
  * @author Ben Alex
  * @author Rob Winch
+ * @deprecated Use
+ * {@link org.springframework.security.web.access.intercept.AuthorizationFilter} instead
+ * for filter security,
+ * {@link org.springframework.security.messaging.access.intercept.AuthorizationChannelInterceptor}
+ * for messaging security, or
+ * {@link org.springframework.security.authorization.method.AuthorizationManagerBeforeMethodInterceptor}
+ * and
+ * {@link org.springframework.security.authorization.method.AuthorizationManagerAfterMethodInterceptor}
+ * for method security.
  */
+@Deprecated
 public abstract class AbstractSecurityInterceptor
 		implements InitializingBean, ApplicationEventPublisherAware, MessageSourceAware {
 
@@ -113,7 +123,7 @@ public abstract class AbstractSecurityInterceptor
 	protected MessageSourceAccessor messages = SpringSecurityMessageSource.getAccessor();
 
 	private SecurityContextHolderStrategy securityContextHolderStrategy = SecurityContextHolder
-			.getContextHolderStrategy();
+		.getContextHolderStrategy();
 
 	private ApplicationEventPublisher eventPublisher;
 
@@ -172,7 +182,7 @@ public abstract class AbstractSecurityInterceptor
 		}
 		if (unsupportedAttrs.size() != 0) {
 			this.logger
-					.trace("Did not validate configuration attributes since validateConfigurationAttributes is false");
+				.trace("Did not validate configuration attributes since validateConfigurationAttributes is false");
 			throw new IllegalArgumentException("Unsupported configuration attributes: " + unsupportedAttrs);
 		}
 		else {
@@ -266,8 +276,8 @@ public abstract class AbstractSecurityInterceptor
 		if (token != null && token.isContextHolderRefreshRequired()) {
 			this.securityContextHolderStrategy.setContext(token.getSecurityContext());
 			if (this.logger.isDebugEnabled()) {
-				this.logger.debug(LogMessage.of(
-						() -> "Reverted to original authentication " + token.getSecurityContext().getAuthentication()));
+				this.logger.debug(LogMessage
+					.of(() -> "Reverted to original authentication " + token.getSecurityContext().getAuthentication()));
 			}
 		}
 	}

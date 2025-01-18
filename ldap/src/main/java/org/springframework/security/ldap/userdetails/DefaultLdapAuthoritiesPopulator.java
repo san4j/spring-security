@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
@@ -37,6 +38,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.ldap.SpringSecurityLdapTemplate;
 import org.springframework.util.Assert;
+import org.springframework.util.CollectionUtils;
 
 /**
  * The default strategy for obtaining user role information from the directory.
@@ -128,7 +130,7 @@ public class DefaultLdapAuthoritiesPopulator implements LdapAuthoritiesPopulator
 	/**
 	 * The base DN from which the search for group membership should be performed
 	 */
-	private String groupSearchBase;
+	private final String groupSearchBase;
 
 	/**
 	 * The pattern to be used for the user search. {0} is the user's DN
@@ -165,13 +167,20 @@ public class DefaultLdapAuthoritiesPopulator implements LdapAuthoritiesPopulator
 		if (groupSearchBase == null) {
 			logger.info("Will not perform group search since groupSearchBase is null.");
 		}
-		else if (groupSearchBase.length() == 0) {
+		else if (groupSearchBase.isEmpty()) {
 			logger.info("Will perform group search from the context source base since groupSearchBase is empty.");
 		}
 		this.authorityMapper = (record) -> {
-			String role = record.get(this.groupRoleAttribute).get(0);
+			List<String> roles = record.get(this.groupRoleAttribute);
+			if (CollectionUtils.isEmpty(roles)) {
+				return null;
+			}
+			String role = roles.get(0);
+			if (role == null) {
+				return null;
+			}
 			if (this.convertToUpperCase) {
-				role = role.toUpperCase();
+				role = role.toUpperCase(Locale.ROOT);
 			}
 			return new SimpleGrantedAuthority(this.rolePrefix + role);
 		};
@@ -225,7 +234,10 @@ public class DefaultLdapAuthoritiesPopulator implements LdapAuthoritiesPopulator
 				new String[] { this.groupRoleAttribute });
 		logger.debug(LogMessage.of(() -> "Found roles from search " + userRoles));
 		for (Map<String, List<String>> role : userRoles) {
-			authorities.add(this.authorityMapper.apply(role));
+			GrantedAuthority authority = this.authorityMapper.apply(role);
+			if (authority != null) {
+				authorities.add(authority);
+			}
 		}
 		return authorities;
 	}
@@ -352,16 +364,6 @@ public class DefaultLdapAuthoritiesPopulator implements LdapAuthoritiesPopulator
 	 */
 	protected final boolean isConvertToUpperCase() {
 		return this.convertToUpperCase;
-	}
-
-	/**
-	 * Returns the default role Method available so that classes extending this can
-	 * override
-	 * @return the default role used
-	 * @see #setDefaultRole(String)
-	 */
-	private GrantedAuthority getDefaultRole() {
-		return this.defaultRole;
 	}
 
 	/**

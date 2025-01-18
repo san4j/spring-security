@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,8 @@ import java.util.Map;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import org.springframework.security.config.Customizer;
+import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.config.annotation.web.builders.WebSecurity;
 import org.springframework.util.Assert;
 import org.springframework.web.filter.DelegatingFilterProxy;
@@ -77,6 +79,15 @@ public abstract class AbstractConfiguredSecurityBuilder<O, B extends SecurityBui
 		this(objectPostProcessor, false);
 	}
 
+	/**
+	 * @deprecated
+	 */
+	@Deprecated(since = "6.4", forRemoval = true)
+	protected AbstractConfiguredSecurityBuilder(
+			org.springframework.security.config.annotation.ObjectPostProcessor<Object> objectPostProcessor) {
+		this(objectPostProcessor, false);
+	}
+
 	/***
 	 * Creates a new instance with the provided {@link ObjectPostProcessor}. This post
 	 * processor must support Object since there are many types of objects that may be
@@ -86,6 +97,18 @@ public abstract class AbstractConfiguredSecurityBuilder<O, B extends SecurityBui
 	 * {@link SecurityConfigurer}'s when performing apply
 	 */
 	protected AbstractConfiguredSecurityBuilder(ObjectPostProcessor<Object> objectPostProcessor,
+			boolean allowConfigurersOfSameType) {
+		Assert.notNull(objectPostProcessor, "objectPostProcessor cannot be null");
+		this.objectPostProcessor = objectPostProcessor;
+		this.allowConfigurersOfSameType = allowConfigurersOfSameType;
+	}
+
+	/**
+	 * @deprecated
+	 */
+	@Deprecated(since = "6.4", forRemoval = true)
+	protected AbstractConfiguredSecurityBuilder(
+			org.springframework.security.config.annotation.ObjectPostProcessor<Object> objectPostProcessor,
 			boolean allowConfigurersOfSameType) {
 		Assert.notNull(objectPostProcessor, "objectPostProcessor cannot be null");
 		this.objectPostProcessor = objectPostProcessor;
@@ -117,7 +140,10 @@ public abstract class AbstractConfiguredSecurityBuilder<O, B extends SecurityBui
 	 * @param configurer
 	 * @return the {@link SecurityConfigurerAdapter} for further customizations
 	 * @throws Exception
+	 * @deprecated For removal in 7.0. Use
+	 * {@link #with(SecurityConfigurerAdapter, Customizer)} instead.
 	 */
+	@Deprecated(since = "6.2", forRemoval = true)
 	@SuppressWarnings("unchecked")
 	public <C extends SecurityConfigurerAdapter<O, B>> C apply(C configurer) throws Exception {
 		configurer.addObjectPostProcessor(this.objectPostProcessor);
@@ -137,6 +163,23 @@ public abstract class AbstractConfiguredSecurityBuilder<O, B extends SecurityBui
 	public <C extends SecurityConfigurer<O, B>> C apply(C configurer) throws Exception {
 		add(configurer);
 		return configurer;
+	}
+
+	/**
+	 * Applies a {@link SecurityConfigurerAdapter} to this {@link SecurityBuilder} and
+	 * invokes {@link SecurityConfigurerAdapter#setBuilder(SecurityBuilder)}.
+	 * @param configurer
+	 * @return the {@link SecurityBuilder} for further customizations
+	 * @throws Exception
+	 * @since 6.2
+	 */
+	@SuppressWarnings("unchecked")
+	public <C extends SecurityConfigurerAdapter<O, B>> B with(C configurer, Customizer<C> customizer) throws Exception {
+		configurer.addObjectPostProcessor(this.objectPostProcessor);
+		configurer.setBuilder((B) this);
+		add(configurer);
+		customizer.customize(configurer);
+		return (B) this;
 	}
 
 	/**
@@ -176,7 +219,7 @@ public abstract class AbstractConfiguredSecurityBuilder<O, B extends SecurityBui
 	private <C extends SecurityConfigurer<O, B>> void add(C configurer) {
 		Assert.notNull(configurer, "configurer cannot be null");
 		Class<? extends SecurityConfigurer<O, B>> clazz = (Class<? extends SecurityConfigurer<O, B>>) configurer
-				.getClass();
+			.getClass();
 		synchronized (this.configurers) {
 			if (this.buildState.isConfigured()) {
 				throw new IllegalStateException("Cannot apply " + configurer + " to already built object");
@@ -221,6 +264,7 @@ public abstract class AbstractConfiguredSecurityBuilder<O, B extends SecurityBui
 		if (configs == null) {
 			return new ArrayList<>();
 		}
+		removeFromConfigurersAddedInInitializing(clazz);
 		return new ArrayList<>(configs);
 	}
 
@@ -253,9 +297,14 @@ public abstract class AbstractConfiguredSecurityBuilder<O, B extends SecurityBui
 		if (configs == null) {
 			return null;
 		}
+		removeFromConfigurersAddedInInitializing(clazz);
 		Assert.state(configs.size() == 1,
 				() -> "Only one configurer expected for type " + clazz + ", but got " + configs);
 		return (C) configs.get(0);
+	}
+
+	private <C extends SecurityConfigurer<O, B>> void removeFromConfigurersAddedInInitializing(Class<C> clazz) {
+		this.configurersAddedInInitializing.removeIf(clazz::isInstance);
 	}
 
 	/**

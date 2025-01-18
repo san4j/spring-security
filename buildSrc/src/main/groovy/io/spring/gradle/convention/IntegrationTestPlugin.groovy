@@ -52,6 +52,15 @@ public class IntegrationTestPlugin implements Plugin<Project> {
 			// ensure we don't add if no tests to avoid adding Gretty
 			return
 		}
+		project.sourceSets {
+			integrationTest {
+				java.srcDir project.file('src/integration-test/java')
+				resources.srcDir project.file('src/integration-test/resources')
+				compileClasspath = project.sourceSets.main.output + project.sourceSets.test.output + project.configurations.integrationTestCompileClasspath
+				runtimeClasspath = output + compileClasspath + project.configurations.integrationTestRuntimeClasspath
+			}
+		}
+
 		project.configurations {
 			integrationTestCompile {
 				extendsFrom testImplementation
@@ -61,20 +70,9 @@ public class IntegrationTestPlugin implements Plugin<Project> {
 			}
 			integrationTestCompileClasspath {
 				extendsFrom integrationTestCompile
-				canBeResolved = true
 			}
 			integrationTestRuntimeClasspath {
 				extendsFrom integrationTestRuntime
-				canBeResolved = true
-			}
-		}
-
-		project.sourceSets {
-			integrationTest {
-				java.srcDir project.file('src/integration-test/java')
-				resources.srcDir project.file('src/integration-test/resources')
-				compileClasspath = project.sourceSets.main.output + project.sourceSets.test.output + project.configurations.integrationTestCompileClasspath
-				runtimeClasspath = output + compileClasspath + project.configurations.integrationTestRuntimeClasspath
 			}
 		}
 

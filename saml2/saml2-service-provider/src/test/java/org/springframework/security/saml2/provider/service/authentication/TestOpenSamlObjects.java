@@ -17,6 +17,7 @@
 package org.springframework.security.saml2.provider.service.authentication;
 
 import java.security.cert.X509Certificate;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -44,6 +45,7 @@ import org.opensaml.core.xml.schema.impl.XSStringBuilder;
 import org.opensaml.core.xml.schema.impl.XSURIBuilder;
 import org.opensaml.saml.common.SAMLVersion;
 import org.opensaml.saml.common.SignableSAMLObject;
+import org.opensaml.saml.common.xml.SAMLConstants;
 import org.opensaml.saml.saml2.core.Assertion;
 import org.opensaml.saml.saml2.core.Attribute;
 import org.opensaml.saml.saml2.core.AttributeStatement;
@@ -73,6 +75,14 @@ import org.opensaml.saml.saml2.core.impl.NameIDBuilder;
 import org.opensaml.saml.saml2.core.impl.StatusBuilder;
 import org.opensaml.saml.saml2.core.impl.StatusCodeBuilder;
 import org.opensaml.saml.saml2.encryption.Encrypter;
+import org.opensaml.saml.saml2.metadata.EntityDescriptor;
+import org.opensaml.saml.saml2.metadata.IDPSSODescriptor;
+import org.opensaml.saml.saml2.metadata.KeyDescriptor;
+import org.opensaml.saml.saml2.metadata.SingleSignOnService;
+import org.opensaml.saml.saml2.metadata.impl.EntityDescriptorBuilder;
+import org.opensaml.saml.saml2.metadata.impl.IDPSSODescriptorBuilder;
+import org.opensaml.saml.saml2.metadata.impl.KeyDescriptorBuilder;
+import org.opensaml.saml.saml2.metadata.impl.SingleSignOnServiceBuilder;
 import org.opensaml.security.SecurityException;
 import org.opensaml.security.credential.BasicCredential;
 import org.opensaml.security.credential.Credential;
@@ -82,6 +92,9 @@ import org.opensaml.xmlsec.SignatureSigningParameters;
 import org.opensaml.xmlsec.encryption.support.DataEncryptionParameters;
 import org.opensaml.xmlsec.encryption.support.EncryptionException;
 import org.opensaml.xmlsec.encryption.support.KeyEncryptionParameters;
+import org.opensaml.xmlsec.keyinfo.KeyInfoSupport;
+import org.opensaml.xmlsec.signature.KeyInfo;
+import org.opensaml.xmlsec.signature.impl.KeyInfoBuilder;
 import org.opensaml.xmlsec.signature.support.SignatureConstants;
 import org.opensaml.xmlsec.signature.support.SignatureException;
 import org.opensaml.xmlsec.signature.support.SignatureSupport;
@@ -91,6 +104,7 @@ import org.springframework.security.saml2.core.OpenSamlInitializationService;
 import org.springframework.security.saml2.core.Saml2X509Credential;
 import org.springframework.security.saml2.core.TestSaml2X509Credentials;
 import org.springframework.security.saml2.provider.service.registration.RelyingPartyRegistration;
+import org.springframework.security.saml2.provider.service.registration.Saml2MessageBinding;
 
 public final class TestOpenSamlObjects {
 
@@ -101,9 +115,11 @@ public final class TestOpenSamlObjects {
 
 	private static String DESTINATION = "https://localhost/login/saml2/sso/idp-alias";
 
+	private static String LOGOUT_DESTINATION = "http://localhost/logout/saml2/slo";
+
 	public static String RELYING_PARTY_ENTITY_ID = "https://localhost/saml2/service-provider-metadata/idp-alias";
 
-	private static String ASSERTING_PARTY_ENTITY_ID = "https://some.idp.test/saml2/idp";
+	public static String ASSERTING_PARTY_ENTITY_ID = "https://some.idp.test/saml2/idp";
 
 	private static SecretKey SECRET_KEY = new SecretKeySpec(
 			Base64.getDecoder().decode("shOnwNMoCv88HKMEa91+FlYoD5RNvzMTAL5LGxZKIFk="), "AES");
@@ -111,11 +127,11 @@ public final class TestOpenSamlObjects {
 	private TestOpenSamlObjects() {
 	}
 
-	static Response response() {
+	public static Response response() {
 		return response(DESTINATION, ASSERTING_PARTY_ENTITY_ID);
 	}
 
-	static Response response(String destination, String issuerEntityId) {
+	public static Response response(String destination, String issuerEntityId) {
 		Response response = build(Response.DEFAULT_ELEMENT_NAME);
 		response.setID("R" + UUID.randomUUID().toString());
 		response.setVersion(SAMLVersion.VERSION_20);
@@ -141,13 +157,15 @@ public final class TestOpenSamlObjects {
 		return assertion(USERNAME, ASSERTING_PARTY_ENTITY_ID, RELYING_PARTY_ENTITY_ID, DESTINATION);
 	}
 
-	static Assertion assertion(String username, String issuerEntityId, String recipientEntityId, String recipientUri) {
+	public static Assertion assertion(String username, String issuerEntityId, String recipientEntityId,
+			String recipientUri) {
 		Assertion assertion = build(Assertion.DEFAULT_ELEMENT_NAME);
 		assertion.setID("A" + UUID.randomUUID().toString());
 		assertion.setVersion(SAMLVersion.VERSION_20);
 		assertion.setIssuer(issuer(issuerEntityId));
 		assertion.setSubject(subject(username));
 		assertion.setConditions(conditions());
+		assertion.setIssueInstant(Instant.now());
 		SubjectConfirmation subjectConfirmation = subjectConfirmation();
 		subjectConfirmation.setMethod(SubjectConfirmation.METHOD_BEARER);
 		SubjectConfirmationData confirmationData = subjectConfirmationData(recipientEntityId);
@@ -204,7 +222,19 @@ public final class TestOpenSamlObjects {
 		return authnRequest;
 	}
 
-	static Credential getSigningCredential(Saml2X509Credential credential, String entityId) {
+	public static LogoutRequest logoutRequest() {
+		Issuer issuer = build(Issuer.DEFAULT_ELEMENT_NAME);
+		issuer.setValue(ASSERTING_PARTY_ENTITY_ID);
+		NameID nameId = build(NameID.DEFAULT_ELEMENT_NAME);
+		nameId.setValue("user");
+		LogoutRequest logoutRequest = build(LogoutRequest.DEFAULT_ELEMENT_NAME);
+		logoutRequest.setIssuer(issuer);
+		logoutRequest.setDestination(LOGOUT_DESTINATION);
+		logoutRequest.setNameID(nameId);
+		return logoutRequest;
+	}
+
+	public static Credential getSigningCredential(Saml2X509Credential credential, String entityId) {
 		BasicCredential cred = getBasicCredential(credential);
 		cred.setEntityId(entityId);
 		cred.setUsageType(UsageType.SIGNING);
@@ -350,7 +380,7 @@ public final class TestOpenSamlObjects {
 		Attribute websiteAttr = attributeBuilder.buildObject();
 		websiteAttr.setName("website");
 		XSURI uri = new XSURIBuilder().buildObject(AttributeValue.DEFAULT_ELEMENT_NAME, XSURI.TYPE_NAME);
-		uri.setValue("https://johndoe.com/");
+		uri.setURI("https://johndoe.com/");
 		websiteAttr.getAttributeValues().add(uri);
 		attrStmt2.getAttributes().add(websiteAttr);
 		Attribute registeredAttr = attributeBuilder.buildObject();
@@ -400,8 +430,10 @@ public final class TestOpenSamlObjects {
 		NameID nameId = nameIdBuilder.buildObject();
 		nameId.setValue("user");
 		logoutRequest.setNameID(null);
-		Saml2X509Credential credential = registration.getAssertingPartyDetails().getEncryptionX509Credentials()
-				.iterator().next();
+		Saml2X509Credential credential = registration.getAssertingPartyDetails()
+			.getEncryptionX509Credentials()
+			.iterator()
+			.next();
 		EncryptedID encrypted = encrypted(nameId, credential);
 		logoutRequest.setEncryptedID(encrypted);
 		IssuerBuilder issuerBuilder = new IssuerBuilder();
@@ -445,6 +477,39 @@ public final class TestOpenSamlObjects {
 		logoutRequest.setIssuer(issuer);
 		logoutRequest.setDestination(registration.getAssertingPartyDetails().getSingleLogoutServiceLocation());
 		return logoutRequest;
+	}
+
+	public static EntityDescriptor entityDescriptor(RelyingPartyRegistration registration) {
+		EntityDescriptorBuilder entityDescriptorBuilder = new EntityDescriptorBuilder();
+		EntityDescriptor entityDescriptor = entityDescriptorBuilder.buildObject();
+		entityDescriptor.setEntityID(registration.getAssertingPartyDetails().getEntityId());
+		IDPSSODescriptorBuilder idpssoDescriptorBuilder = new IDPSSODescriptorBuilder();
+		IDPSSODescriptor idpssoDescriptor = idpssoDescriptorBuilder.buildObject();
+		idpssoDescriptor.addSupportedProtocol(SAMLConstants.SAML20P_NS);
+		SingleSignOnServiceBuilder singleSignOnServiceBuilder = new SingleSignOnServiceBuilder();
+		SingleSignOnService singleSignOnService = singleSignOnServiceBuilder.buildObject();
+		singleSignOnService.setBinding(Saml2MessageBinding.POST.getUrn());
+		singleSignOnService.setLocation(registration.getAssertingPartyDetails().getSingleSignOnServiceLocation());
+		idpssoDescriptor.getSingleSignOnServices().add(singleSignOnService);
+		KeyDescriptorBuilder keyDescriptorBuilder = new KeyDescriptorBuilder();
+		KeyDescriptor keyDescriptor = keyDescriptorBuilder.buildObject();
+		keyDescriptor.setUse(UsageType.SIGNING);
+		KeyInfoBuilder keyInfoBuilder = new KeyInfoBuilder();
+		KeyInfo keyInfo = keyInfoBuilder.buildObject();
+		addCertificate(keyInfo, registration.getSigningX509Credentials().iterator().next().getCertificate());
+		keyDescriptor.setKeyInfo(keyInfo);
+		idpssoDescriptor.getKeyDescriptors().add(keyDescriptor);
+		entityDescriptor.getRoleDescriptors(IDPSSODescriptor.DEFAULT_ELEMENT_NAME).add(idpssoDescriptor);
+		return entityDescriptor;
+	}
+
+	static void addCertificate(KeyInfo info, X509Certificate certificate) {
+		try {
+			KeyInfoSupport.addCertificate(info, certificate);
+		}
+		catch (Exception ex) {
+			throw new Saml2Exception(ex);
+		}
 	}
 
 	static <T extends XMLObject> T build(QName qName) {

@@ -24,6 +24,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.config.oauth2.client.CommonOAuth2Provider;
 import org.springframework.security.config.test.SpringTestContext;
 import org.springframework.security.config.test.SpringTestContextExtension;
@@ -170,7 +173,7 @@ public class OAuth2ClientBeanDefinitionParserTests {
 		OAuth2AuthorizationRequest authorizationRequest = createAuthorizationRequest(clientRegistration);
 		given(this.authorizationRequestRepository.loadAuthorizationRequest(any())).willReturn(authorizationRequest);
 		given(this.authorizationRequestRepository.removeAuthorizationRequest(any(), any()))
-				.willReturn(authorizationRequest);
+			.willReturn(authorizationRequest);
 		OAuth2AccessTokenResponse accessTokenResponse = TestOAuth2AccessTokenResponses.accessTokenResponse().build();
 		given(this.accessTokenResponseClient.getTokenResponse(any())).willReturn(accessTokenResponse);
 		MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
@@ -182,7 +185,7 @@ public class OAuth2ClientBeanDefinitionParserTests {
 				.andExpect(redirectedUrl(authorizationRequest.getRedirectUri()));
 		// @formatter:on
 		ArgumentCaptor<OAuth2AuthorizedClient> authorizedClientCaptor = ArgumentCaptor
-				.forClass(OAuth2AuthorizedClient.class);
+			.forClass(OAuth2AuthorizedClient.class);
 		verify(this.authorizedClientRepository).saveAuthorizedClient(authorizedClientCaptor.capture(), any(), any(),
 				any());
 		OAuth2AuthorizedClient authorizedClient = authorizedClientCaptor.getValue();
@@ -198,7 +201,7 @@ public class OAuth2ClientBeanDefinitionParserTests {
 		OAuth2AuthorizationRequest authorizationRequest = createAuthorizationRequest(clientRegistration);
 		given(this.authorizationRequestRepository.loadAuthorizationRequest(any())).willReturn(authorizationRequest);
 		given(this.authorizationRequestRepository.removeAuthorizationRequest(any(), any()))
-				.willReturn(authorizationRequest);
+			.willReturn(authorizationRequest);
 		OAuth2AccessTokenResponse accessTokenResponse = TestOAuth2AccessTokenResponses.accessTokenResponse().build();
 		given(this.accessTokenResponseClient.getTokenResponse(any())).willReturn(accessTokenResponse);
 		MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
@@ -219,8 +222,12 @@ public class OAuth2ClientBeanDefinitionParserTests {
 		ClientRegistration clientRegistration = this.clientRegistrationRepository.findByRegistrationId("google");
 		OAuth2AuthorizedClient authorizedClient = new OAuth2AuthorizedClient(clientRegistration, "user",
 				TestOAuth2AccessTokens.noScopes());
-		given(this.authorizedClientRepository.loadAuthorizedClient(any(), any(), any())).willReturn(authorizedClient);
-		this.mvc.perform(get("/authorized-client")).andExpect(status().isOk()).andExpect(content().string("resolved"));
+		MockHttpServletRequest request = new MockHttpServletRequest();
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		this.authorizedClientRepository.saveAuthorizedClient(authorizedClient, null, request, response);
+		this.mvc.perform(get("/authorized-client").session((MockHttpSession) request.getSession()))
+			.andExpect(status().isOk())
+			.andExpect(content().string("resolved"));
 	}
 
 	private static OAuth2AuthorizationRequest createAuthorizationRequest(ClientRegistration clientRegistration) {

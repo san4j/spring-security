@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2020 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package org.springframework.security.config.annotation.web.configurers.oauth2.client;
 
+import org.springframework.context.ApplicationContext;
+import org.springframework.core.ResolvableType;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.HttpSecurityBuilder;
@@ -84,6 +86,7 @@ import org.springframework.util.Assert;
  *
  * @author Joe Grandja
  * @author Parikshit Dutta
+ * @author Ngoc Nhan
  * @since 5.1
  * @see OAuth2AuthorizationRequestRedirectFilter
  * @see OAuth2AuthorizationCodeGrantFilter
@@ -136,7 +139,10 @@ public final class OAuth2ClientConfigurer<B extends HttpSecurityBuilder<B>>
 	 * Returns the {@link AuthorizationCodeGrantConfigurer} for configuring the OAuth 2.0
 	 * Authorization Code Grant.
 	 * @return the {@link AuthorizationCodeGrantConfigurer}
+	 * @deprecated For removal in 7.0. Use {@link #authorizationCodeGrant(Customizer)}
+	 * instead
 	 */
+	@Deprecated(since = "6.1", forRemoval = true)
 	public AuthorizationCodeGrantConfigurer authorizationCodeGrant() {
 		return this.authorizationCodeGrantConfigurer;
 	}
@@ -233,7 +239,10 @@ public final class OAuth2ClientConfigurer<B extends HttpSecurityBuilder<B>>
 		/**
 		 * Returns the {@link OAuth2ClientConfigurer} for further configuration.
 		 * @return the {@link OAuth2ClientConfigurer}
+		 * @deprecated For removal in 7.0. Use {@link #authorizationCodeGrant(Customizer)}
+		 * instead
 		 */
+		@Deprecated(since = "6.1", forRemoval = true)
 		public OAuth2ClientConfigurer<B> and() {
 			return OAuth2ClientConfigurer.this;
 		}
@@ -259,7 +268,7 @@ public final class OAuth2ClientConfigurer<B extends HttpSecurityBuilder<B>>
 					resolver);
 			if (this.authorizationRequestRepository != null) {
 				authorizationRequestRedirectFilter
-						.setAuthorizationRequestRepository(this.authorizationRequestRepository);
+					.setAuthorizationRequestRepository(this.authorizationRequestRepository);
 			}
 			if (this.authorizationRedirectStrategy != null) {
 				authorizationRequestRedirectFilter.setAuthorizationRedirectStrategy(this.authorizationRedirectStrategy);
@@ -276,8 +285,10 @@ public final class OAuth2ClientConfigurer<B extends HttpSecurityBuilder<B>>
 				return this.authorizationRequestResolver;
 			}
 			ClientRegistrationRepository clientRegistrationRepository = OAuth2ClientConfigurerUtils
-					.getClientRegistrationRepository(getBuilder());
-			return new DefaultOAuth2AuthorizationRequestResolver(clientRegistrationRepository,
+				.getClientRegistrationRepository(getBuilder());
+			ResolvableType resolvableType = ResolvableType.forClass(OAuth2AuthorizationRequestResolver.class);
+			OAuth2AuthorizationRequestResolver bean = getBeanOrNull(resolvableType);
+			return (bean != null) ? bean : new DefaultOAuth2AuthorizationRequestResolver(clientRegistrationRepository,
 					OAuth2AuthorizationRequestRedirectFilter.DEFAULT_AUTHORIZATION_REQUEST_BASE_URI);
 		}
 
@@ -289,6 +300,7 @@ public final class OAuth2ClientConfigurer<B extends HttpSecurityBuilder<B>>
 			if (this.authorizationRequestRepository != null) {
 				authorizationCodeGrantFilter.setAuthorizationRequestRepository(this.authorizationRequestRepository);
 			}
+			authorizationCodeGrantFilter.setSecurityContextHolderStrategy(getSecurityContextHolderStrategy());
 			RequestCache requestCache = builder.getSharedObject(RequestCache.class);
 			if (requestCache != null) {
 				authorizationCodeGrantFilter.setRequestCache(requestCache);
@@ -300,7 +312,19 @@ public final class OAuth2ClientConfigurer<B extends HttpSecurityBuilder<B>>
 			if (this.accessTokenResponseClient != null) {
 				return this.accessTokenResponseClient;
 			}
-			return new DefaultAuthorizationCodeTokenResponseClient();
+			ResolvableType resolvableType = ResolvableType.forClassWithGenerics(OAuth2AccessTokenResponseClient.class,
+					OAuth2AuthorizationCodeGrantRequest.class);
+			OAuth2AccessTokenResponseClient<OAuth2AuthorizationCodeGrantRequest> bean = getBeanOrNull(resolvableType);
+			return (bean != null) ? bean : new DefaultAuthorizationCodeTokenResponseClient();
+		}
+
+		@SuppressWarnings("unchecked")
+		private <T> T getBeanOrNull(ResolvableType type) {
+			ApplicationContext context = getBuilder().getSharedObject(ApplicationContext.class);
+			if (context == null) {
+				return null;
+			}
+			return (T) context.getBeanProvider(type).getIfUnique();
 		}
 
 	}

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,6 +49,7 @@ import static org.mockito.Mockito.verify;
  * Tests for {@link PostFilterAuthorizationMethodInterceptor}.
  *
  * @author Evgeniy Cheban
+ * @author Gengwu Zhao
  */
 public class PostFilterAuthorizationMethodInterceptorTests {
 
@@ -74,7 +75,7 @@ public class PostFilterAuthorizationMethodInterceptorTests {
 	public void setExpressionHandlerWhenNullThenException() {
 		PostFilterAuthorizationMethodInterceptor advice = new PostFilterAuthorizationMethodInterceptor();
 		assertThatIllegalArgumentException().isThrownBy(() -> advice.setExpressionHandler(null))
-				.withMessage("expressionHandler cannot be null");
+			.withMessage("expressionHandler cannot be null");
 	}
 
 	@Test
@@ -82,7 +83,7 @@ public class PostFilterAuthorizationMethodInterceptorTests {
 		PostFilterAuthorizationMethodInterceptor advice = new PostFilterAuthorizationMethodInterceptor();
 		MethodMatcher methodMatcher = advice.getPointcut().getMethodMatcher();
 		assertThat(methodMatcher.matches(NoPostFilterClass.class.getMethod("doSomething"), NoPostFilterClass.class))
-				.isFalse();
+			.isFalse();
 	}
 
 	@Test
@@ -91,7 +92,7 @@ public class PostFilterAuthorizationMethodInterceptorTests {
 		MethodMatcher methodMatcher = advice.getPointcut().getMethodMatcher();
 		assertThat(
 				methodMatcher.matches(TestClass.class.getMethod("doSomethingArray", String[].class), TestClass.class))
-						.isTrue();
+			.isTrue();
 	}
 
 	@Test
@@ -110,29 +111,21 @@ public class PostFilterAuthorizationMethodInterceptorTests {
 	}
 
 	@Test
-	public void checkInheritedAnnotationsWhenDuplicatedThenAnnotationConfigurationException() throws Exception {
-		MockMethodInvocation methodInvocation = new MockMethodInvocation(new TestClass(), TestClass.class,
-				"inheritedAnnotations");
-		PostFilterAuthorizationMethodInterceptor advice = new PostFilterAuthorizationMethodInterceptor();
-		assertThatExceptionOfType(AnnotationConfigurationException.class)
-				.isThrownBy(() -> advice.invoke(methodInvocation));
-	}
-
-	@Test
 	public void checkInheritedAnnotationsWhenConflictingThenAnnotationConfigurationException() throws Exception {
 		MockMethodInvocation methodInvocation = new MockMethodInvocation(new ConflictingAnnotations(),
 				ConflictingAnnotations.class, "inheritedAnnotations");
 		PostFilterAuthorizationMethodInterceptor advice = new PostFilterAuthorizationMethodInterceptor();
 		assertThatExceptionOfType(AnnotationConfigurationException.class)
-				.isThrownBy(() -> advice.invoke(methodInvocation));
+			.isThrownBy(() -> advice.invoke(methodInvocation));
 	}
 
 	@Test
 	public void postFilterWhenMockSecurityContextHolderStrategyThenUses() throws Throwable {
-		SecurityContextHolderStrategy strategy = mock(SecurityContextHolderStrategy.class);
+
 		Authentication authentication = new TestingAuthenticationToken("john", "password",
 				AuthorityUtils.createAuthorityList("authority"));
-		given(strategy.getContext()).willReturn(new SecurityContextImpl(authentication));
+		SecurityContextHolderStrategy strategy = mockSecurityContextHolderStrategy(
+				new SecurityContextImpl(authentication));
 		String[] array = { "john", "bob" };
 		MockMethodInvocation invocation = new MockMethodInvocation(new TestClass(), TestClass.class,
 				"doSomethingArrayAuthentication", new Class[] { String[].class }, new Object[] { array }) {
@@ -145,6 +138,37 @@ public class PostFilterAuthorizationMethodInterceptorTests {
 		advice.setSecurityContextHolderStrategy(strategy);
 		advice.invoke(invocation);
 		verify(strategy).getContext();
+	}
+
+	// gh-12877
+	@Test
+	public void postFilterWhenStaticSecurityContextHolderStrategyAfterConstructorThenUses() throws Throwable {
+
+		Authentication authentication = new TestingAuthenticationToken("john", "password",
+				AuthorityUtils.createAuthorityList("authority"));
+		SecurityContextHolderStrategy strategy = mockSecurityContextHolderStrategy(
+				new SecurityContextImpl(authentication));
+		String[] array = { "john", "bob" };
+		MockMethodInvocation invocation = new MockMethodInvocation(new TestClass(), TestClass.class,
+				"doSomethingArrayAuthentication", new Class[] { String[].class }, new Object[] { array }) {
+			@Override
+			public Object proceed() {
+				return array;
+			}
+		};
+		PostFilterAuthorizationMethodInterceptor advice = new PostFilterAuthorizationMethodInterceptor();
+		SecurityContextHolderStrategy saved = SecurityContextHolder.getContextHolderStrategy();
+		SecurityContextHolder.setContextHolderStrategy(strategy);
+		advice.invoke(invocation);
+		verify(strategy).getContext();
+		SecurityContextHolder.setContextHolderStrategy(saved);
+	}
+
+	private SecurityContextHolderStrategy mockSecurityContextHolderStrategy(SecurityContextImpl securityContextImpl) {
+
+		SecurityContextHolderStrategy strategy = mock(SecurityContextHolderStrategy.class);
+		given(strategy.getContext()).willReturn(securityContextImpl);
+		return strategy;
 	}
 
 	@PostFilter("filterObject == 'john'")
@@ -179,12 +203,10 @@ public class PostFilterAuthorizationMethodInterceptorTests {
 
 	}
 
-	public static class ConflictingAnnotations implements InterfaceAnnotationsThree {
+	public static class ConflictingAnnotations implements InterfaceAnnotationsOne, InterfaceAnnotationsTwo {
 
 		@Override
-		@PostFilter("filterObject == 'jack'")
 		public void inheritedAnnotations() {
-
 		}
 
 	}

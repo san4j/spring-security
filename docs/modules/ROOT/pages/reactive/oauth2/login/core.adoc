@@ -1,9 +1,9 @@
 = Core Configuration
 
 [[webflux-oauth2-login-sample]]
-== Spring Boot 2.x Sample
+== Spring Boot Sample
 
-Spring Boot 2.x brings full auto-configuration capabilities for OAuth 2.0 Login.
+Spring Boot brings full auto-configuration capabilities for OAuth 2.0 Login.
 
 This section shows how to configure the {gh-samples-url}/boot/oauth2login-webflux[*OAuth 2.0 Login WebFlux sample*] by using _Google_ as the _Authentication Provider_ and covers the following topics:
 
@@ -80,7 +80,7 @@ spring:
 [[webflux-oauth2-login-sample-start]]
 === Boot the Application
 
-Launch the Spring Boot 2.x sample and go to `http://localhost:8080`.
+Launch the Spring Boot sample and go to `http://localhost:8080`.
 You are then redirected to the default _auto-generated_ login page, which displays a link for Google.
 
 Click on the Google link, and you are then redirected to Google for authentication.
@@ -93,12 +93,12 @@ At this point, the OAuth Client retrieves your email address and basic profile i
 
 
 [[oauth2login-boot-property-mappings]]
-== Spring Boot 2.x Property Mappings
+== Spring Boot Property Mappings
 
-The following table outlines the mapping of the Spring Boot 2.x OAuth Client properties to the xref:reactive/oauth2/client/core.adoc#oauth2Client-client-registration[ClientRegistration] properties.
+The following table outlines the mapping of the Spring Boot OAuth Client properties to the xref:reactive/oauth2/client/core.adoc#oauth2Client-client-registration[ClientRegistration] properties.
 
 |===
-|Spring Boot 2.x |ClientRegistration
+|Spring Boot |ClientRegistration
 
 |`spring.security.oauth2.client.registration._[registrationId]_`
 |`registrationId`
@@ -204,7 +204,7 @@ There are some OAuth 2.0 Providers that support multi-tenancy, which results in 
 
 For example, an OAuth Client registered with Okta is assigned to a specific sub-domain and have their own protocol endpoints.
 
-For these cases, Spring Boot 2.x provides the following base property for configuring custom provider properties: `spring.security.oauth2.client.provider._[providerId]_`.
+For these cases, Spring Boot provides the following base property for configuring custom provider properties: `spring.security.oauth2.client.provider._[providerId]_`.
 
 The following listing shows an example:
 
@@ -231,9 +231,9 @@ spring:
 
 
 [[webflux-oauth2-login-override-boot-autoconfig]]
-== Overriding Spring Boot 2.x Auto-configuration
+== Overriding Spring Boot Auto-configuration
 
-The Spring Boot 2.x auto-configuration class for OAuth Client support is `ReactiveOAuth2ClientAutoConfiguration`.
+The Spring Boot auto-configuration class for OAuth Client support is `ReactiveOAuth2ClientAutoConfiguration`.
 
 It performs the following tasks:
 
@@ -252,8 +252,10 @@ If you need to override the auto-configuration based on your specific requiremen
 
 The following example shows how to register a `ReactiveClientRegistrationRepository` `@Bean`:
 
-====
-.Java
+[tabs]
+======
+Java::
++
 [source,java,role="primary",attrs="-attributes"]
 ----
 @Configuration
@@ -283,7 +285,8 @@ public class OAuth2LoginConfig {
 }
 ----
 
-.Kotlin
+Kotlin::
++
 [source,kotlin,role="secondary",attrs="-attributes"]
 ----
 @Configuration
@@ -312,7 +315,7 @@ class OAuth2LoginConfig {
     }
 }
 ----
-====
+======
 
 
 [[webflux-oauth2-login-register-securitywebfilterchain-bean]]
@@ -321,8 +324,10 @@ class OAuth2LoginConfig {
 The following example shows how to register a `SecurityWebFilterChain` `@Bean` with `@EnableWebFluxSecurity` and enable OAuth 2.0 login through `serverHttpSecurity.oauth2Login()`:
 
 .OAuth2 Login Configuration
-====
-.Java
+[tabs]
+======
+Java::
++
 [source,java,role="primary"]
 ----
 @Configuration
@@ -342,7 +347,8 @@ public class OAuth2LoginSecurityConfig {
 }
 ----
 
-.Kotlin
+Kotlin::
++
 [source,kotlin,role="secondary"]
 ----
 @Configuration
@@ -362,7 +368,7 @@ class OAuth2LoginSecurityConfig {
     }
 }
 ----
-====
+======
 
 
 [[webflux-oauth2-login-completely-override-autoconfiguration]]
@@ -371,8 +377,10 @@ class OAuth2LoginSecurityConfig {
 The following example shows how to completely override the auto-configuration by registering a `ReactiveClientRegistrationRepository` `@Bean` and a `SecurityWebFilterChain` `@Bean`.
 
 .Overriding the auto-configuration
-====
-.Java
+[tabs]
+======
+Java::
++
 [source,java,role="primary",attrs="-attributes"]
 ----
 @Configuration
@@ -414,7 +422,8 @@ public class OAuth2LoginConfig {
 }
 ----
 
-.Kotlin
+Kotlin::
++
 [source,kotlin,role="secondary",attrs="-attributes"]
 ----
 @Configuration
@@ -456,17 +465,19 @@ class OAuth2LoginConfig {
     }
 }
 ----
-====
+======
 
 
 [[webflux-oauth2-login-javaconfig-wo-boot]]
-== Java Configuration without Spring Boot 2.x
+== Java Configuration without Spring Boot
 
-If you are not able to use Spring Boot 2.x and would like to configure one of the pre-defined providers in `CommonOAuth2Provider` (for example, Google), apply the following configuration:
+If you are not able to use Spring Boot and would like to configure one of the pre-defined providers in `CommonOAuth2Provider` (for example, Google), apply the following configuration:
 
 .OAuth2 Login Configuration
-====
-.Java
+[tabs]
+======
+Java::
++
 [source,java,role="primary"]
 ----
 @Configuration
@@ -510,7 +521,8 @@ public class OAuth2LoginConfig {
 }
 ----
 
-.Kotlin
+Kotlin::
++
 [source,kotlin,role="secondary"]
 ----
 @Configuration
@@ -556,4 +568,4 @@ class OAuth2LoginConfig {
     }
 }
 ----
-====
+======

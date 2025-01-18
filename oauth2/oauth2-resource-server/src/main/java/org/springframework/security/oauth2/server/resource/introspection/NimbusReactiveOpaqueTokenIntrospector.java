@@ -54,7 +54,9 @@ import org.springframework.web.reactive.function.client.WebClient;
  *
  * @author Josh Cummings
  * @since 5.2
+ * @deprecated Please use {@link SpringReactiveOpaqueTokenIntrospector} instead
  */
+@Deprecated
 public class NimbusReactiveOpaqueTokenIntrospector implements ReactiveOpaqueTokenIntrospector {
 
 	private static final String AUTHORITY_PREFIX = "SCOPE_";
@@ -133,7 +135,7 @@ public class NimbusReactiveOpaqueTokenIntrospector implements ReactiveOpaqueToke
 					+ contentType + "' is not compatible with JSON");
 		}
 
-		HTTPResponse response = new HTTPResponse(responseEntity.rawStatusCode());
+		HTTPResponse response = new HTTPResponse(responseEntity.statusCode().value());
 		response.setHeader(HttpHeaders.CONTENT_TYPE, contentType.toString());
 		if (response.getStatusCode() != HTTPResponse.SC_OK) {
 			this.logger.trace("Introspection endpoint returned non-OK status code");

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,20 +19,41 @@ package org.springframework.security.web.aot.hint;
 import org.springframework.aot.hint.MemberCategory;
 import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.RuntimeHintsRegistrar;
+import org.springframework.aot.hint.TypeReference;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.security.web.access.expression.WebSecurityExpressionRoot;
 
 /**
  * {@link RuntimeHintsRegistrar} for WebMVC classes
  *
  * @author Marcus Da Coregio
+ * @author Daniel Garnier-Moiroux
  * @since 6.0
  */
 class WebMvcSecurityRuntimeHints implements RuntimeHintsRegistrar {
 
 	@Override
 	public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
-		hints.reflection().registerType(WebSecurityExpressionRoot.class, (builder) -> builder
+		hints.reflection()
+			.registerType(WebSecurityExpressionRoot.class, (builder) -> builder
 				.withMembers(MemberCategory.INVOKE_DECLARED_METHODS, MemberCategory.DECLARED_FIELDS));
+		hints.reflection()
+			.registerType(
+					TypeReference
+						.of("org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler$SupplierCsrfToken"),
+					MemberCategory.INVOKE_DECLARED_METHODS);
+
+		ClassPathResource css = new ClassPathResource("org/springframework/security/default-ui.css");
+		if (css.exists()) {
+			hints.resources().registerResource(css);
+		}
+
+		ClassPathResource webauthnJavascript = new ClassPathResource(
+				"org/springframework/security/spring-security-webauthn.js");
+		if (webauthnJavascript.exists()) {
+			hints.resources().registerResource(webauthnJavascript);
+		}
+
 	}
 
 }

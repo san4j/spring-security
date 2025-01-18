@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.aot.hint.MemberCategory;
 import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.RuntimeHintsRegistrar;
+import org.springframework.aot.hint.TypeReference;
 import org.springframework.aot.hint.predicate.RuntimeHintsPredicates;
 import org.springframework.core.io.support.SpringFactoriesLoader;
 import org.springframework.security.web.access.expression.WebSecurityExpressionRoot;
@@ -40,15 +41,37 @@ class WebMvcSecurityRuntimeHintsTests {
 
 	@BeforeEach
 	void setup() {
-		SpringFactoriesLoader.forResourceLocation("META-INF/spring/aot.factories").load(RuntimeHintsRegistrar.class)
-				.forEach((registrar) -> registrar.registerHints(this.hints, ClassUtils.getDefaultClassLoader()));
+		SpringFactoriesLoader.forResourceLocation("META-INF/spring/aot.factories")
+			.load(RuntimeHintsRegistrar.class)
+			.forEach((registrar) -> registrar.registerHints(this.hints, ClassUtils.getDefaultClassLoader()));
 	}
 
 	@Test
 	void webSecurityExpressionRootHasHints() {
-		assertThat(RuntimeHintsPredicates.reflection().onType(WebSecurityExpressionRoot.class)
-				.withMemberCategories(MemberCategory.INVOKE_DECLARED_METHODS, MemberCategory.DECLARED_FIELDS))
-						.accepts(this.hints);
+		assertThat(RuntimeHintsPredicates.reflection()
+			.onType(WebSecurityExpressionRoot.class)
+			.withMemberCategories(MemberCategory.INVOKE_DECLARED_METHODS, MemberCategory.DECLARED_FIELDS))
+			.accepts(this.hints);
+	}
+
+	@Test
+	void supplierCsrfTokenHasHints() {
+		assertThat(RuntimeHintsPredicates.reflection()
+			.onType(TypeReference
+				.of("org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler$SupplierCsrfToken"))
+			.withMemberCategories(MemberCategory.INVOKE_DECLARED_METHODS)).accepts(this.hints);
+	}
+
+	@Test
+	void cssHasHints() {
+		assertThat(RuntimeHintsPredicates.resource().forResource("org/springframework/security/default-ui.css"))
+			.accepts(this.hints);
+	}
+
+	@Test
+	void webauthnJavascriptHasHints() {
+		assertThat(RuntimeHintsPredicates.resource()
+			.forResource("org/springframework/security/spring-security-webauthn.js")).accepts(this.hints);
 	}
 
 }

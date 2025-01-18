@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,13 +32,15 @@ import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.security.authorization.AuthorizationManager;
 import org.springframework.security.authorization.SpringAuthorizationEventPublisher;
+import org.springframework.security.config.ObjectPostProcessor;
+import org.springframework.security.core.annotation.AnnotationTemplateExpressionDefaults;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.context.SecurityContextHolderStrategy;
 import org.springframework.security.messaging.access.intercept.AuthorizationChannelInterceptor;
 import org.springframework.security.messaging.access.intercept.MessageMatcherDelegatingAuthorizationManager;
 import org.springframework.security.messaging.context.AuthenticationPrincipalArgumentResolver;
 import org.springframework.security.messaging.context.SecurityContextChannelInterceptor;
-import org.springframework.security.messaging.web.csrf.CsrfChannelInterceptor;
+import org.springframework.security.messaging.web.csrf.XorCsrfChannelInterceptor;
 import org.springframework.security.messaging.web.socket.server.CsrfTokenHandshakeInterceptor;
 import org.springframework.util.Assert;
 import org.springframework.web.servlet.handler.SimpleUrlHandlerMapping;
@@ -56,22 +58,30 @@ final class WebSocketMessageBrokerSecurityConfiguration
 
 	private static final String SIMPLE_URL_HANDLER_MAPPING_BEAN_NAME = "stompWebSocketHandlerMapping";
 
+	private static final String CSRF_CHANNEL_INTERCEPTOR_BEAN_NAME = "csrfChannelInterceptor";
+
 	private MessageMatcherDelegatingAuthorizationManager b;
 
 	private static final AuthorizationManager<Message<?>> ANY_MESSAGE_AUTHENTICATED = MessageMatcherDelegatingAuthorizationManager
-			.builder().anyMessage().authenticated().build();
+		.builder()
+		.anyMessage()
+		.authenticated()
+		.build();
 
 	private SecurityContextHolderStrategy securityContextHolderStrategy = SecurityContextHolder
-			.getContextHolderStrategy();
+		.getContextHolderStrategy();
 
 	private final SecurityContextChannelInterceptor securityContextChannelInterceptor = new SecurityContextChannelInterceptor();
 
-	private final ChannelInterceptor csrfChannelInterceptor = new CsrfChannelInterceptor();
+	private ChannelInterceptor csrfChannelInterceptor = new XorCsrfChannelInterceptor();
 
-	private AuthorizationChannelInterceptor authorizationChannelInterceptor = new AuthorizationChannelInterceptor(
-			ANY_MESSAGE_AUTHENTICATED);
+	private AuthorizationManager<Message<?>> authorizationManager = ANY_MESSAGE_AUTHENTICATED;
+
+	private ObjectPostProcessor<AuthorizationManager<Message<?>>> postProcessor = ObjectPostProcessor.identity();
 
 	private ApplicationContext context;
+
+	private AnnotationTemplateExpressionDefaults templateDefaults;
 
 	WebSocketMessageBrokerSecurityConfiguration(ApplicationContext context) {
 		this.context = context;
@@ -81,17 +91,25 @@ final class WebSocketMessageBrokerSecurityConfiguration
 	public void addArgumentResolvers(List<HandlerMethodArgumentResolver> argumentResolvers) {
 		AuthenticationPrincipalArgumentResolver resolver = new AuthenticationPrincipalArgumentResolver();
 		resolver.setSecurityContextHolderStrategy(this.securityContextHolderStrategy);
+		resolver.setTemplateDefaults(this.templateDefaults);
 		argumentResolvers.add(resolver);
 	}
 
 	@Override
 	public void configureClientInboundChannel(ChannelRegistration registration) {
-		this.authorizationChannelInterceptor
-				.setAuthorizationEventPublisher(new SpringAuthorizationEventPublisher(this.context));
-		this.authorizationChannelInterceptor.setSecurityContextHolderStrategy(this.securityContextHolderStrategy);
+		ChannelInterceptor csrfChannelInterceptor = getBeanOrNull(CSRF_CHANNEL_INTERCEPTOR_BEAN_NAME,
+				ChannelInterceptor.class);
+		if (csrfChannelInterceptor != null) {
+			this.csrfChannelInterceptor = csrfChannelInterceptor;
+		}
+
+		AuthorizationManager<Message<?>> manager = this.authorizationManager;
+		manager = this.postProcessor.postProcess(manager);
+		AuthorizationChannelInterceptor interceptor = new AuthorizationChannelInterceptor(manager);
+		interceptor.setAuthorizationEventPublisher(new SpringAuthorizationEventPublisher(this.context));
+		interceptor.setSecurityContextHolderStrategy(this.securityContextHolderStrategy);
 		this.securityContextChannelInterceptor.setSecurityContextHolderStrategy(this.securityContextHolderStrategy);
-		registration.interceptors(this.securityContextChannelInterceptor, this.csrfChannelInterceptor,
-				this.authorizationChannelInterceptor);
+		registration.interceptors(this.securityContextChannelInterceptor, this.csrfChannelInterceptor, interceptor);
 	}
 
 	@Autowired(required = false)
@@ -102,7 +120,18 @@ final class WebSocketMessageBrokerSecurityConfiguration
 
 	@Autowired(required = false)
 	void setAuthorizationManager(AuthorizationManager<Message<?>> authorizationManager) {
-		this.authorizationChannelInterceptor = new AuthorizationChannelInterceptor(authorizationManager);
+		this.authorizationManager = authorizationManager;
+	}
+
+	@Autowired(required = false)
+	void setMessageAuthorizationManagerPostProcessor(
+			ObjectPostProcessor<AuthorizationManager<Message<?>>> postProcessor) {
+		this.postProcessor = postProcessor;
+	}
+
+	@Autowired(required = false)
+	void setTemplateDefaults(AnnotationTemplateExpressionDefaults templateDefaults) {
+		this.templateDefaults = templateDefaults;
 	}
 
 	@Override

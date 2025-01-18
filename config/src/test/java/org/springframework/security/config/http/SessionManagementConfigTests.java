@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2021 the original author or authors.
+ * Copyright 2002-2022 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -140,7 +140,7 @@ public class SessionManagementConfigTests {
 		assertThat(response.getStatus()).isEqualTo(HttpStatus.SC_MOVED_TEMPORARILY);
 		assertThat(request.getSession(false)).isNotNull();
 		assertThat(request.getSession(false)
-				.getAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY)).isNotNull();
+			.getAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY)).isNotNull();
 	}
 
 	@Test
@@ -180,8 +180,9 @@ public class SessionManagementConfigTests {
 				.andExpect(status().isFound())
 				.andExpect(session()).andReturn();
 		// @formatter:on
-		assertThat(result.getRequest().getSession(false)
-				.getAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY)).isNull();
+		assertThat(result.getRequest()
+			.getSession(false)
+			.getAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY)).isNull();
 	}
 
 	@Test
@@ -305,8 +306,9 @@ public class SessionManagementConfigTests {
 	@Test
 	public void autowireWhenConcurrencyControlIsSetThenLogoutHandlersGetAuthenticationObject() throws Exception {
 		this.spring.configLocations(xml("ConcurrencyControlCustomLogoutHandler")).autowire();
-		MvcResult result = this.mvc.perform(get("/auth").with(httpBasic("user", "password"))).andExpect(session())
-				.andReturn();
+		MvcResult result = this.mvc.perform(get("/auth").with(httpBasic("user", "password")))
+			.andExpect(session())
+			.andReturn();
 		MockHttpSession session = (MockHttpSession) result.getRequest().getSession(false);
 		SessionRegistry sessionRegistry = this.spring.getContext().getBean(SessionRegistry.class);
 		sessionRegistry.getSessionInformation(session.getId()).expireNow();
@@ -617,16 +619,6 @@ public class SessionManagementConfigTests {
 
 		@Override
 		public String encodeRedirectURL(String url) {
-			throw new RuntimeException("Unexpected invocation of encodeURL");
-		}
-
-		@Override
-		public String encodeUrl(String url) {
-			throw new RuntimeException("Unexpected invocation of encodeURL");
-		}
-
-		@Override
-		public String encodeRedirectUrl(String url) {
 			throw new RuntimeException("Unexpected invocation of encodeURL");
 		}
 

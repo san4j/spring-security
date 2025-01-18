@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2021 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import java.net.ServerSocket;
 import org.springframework.ldap.core.support.BaseLdapPathContextSource;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
-import org.springframework.security.config.annotation.ObjectPostProcessor;
+import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.config.annotation.SecurityConfigurerAdapter;
 import org.springframework.security.config.annotation.authentication.ProviderManagerBuilder;
 import org.springframework.security.config.annotation.web.configurers.ChannelSecurityConfigurer;
@@ -61,6 +61,14 @@ import org.springframework.util.ClassUtils;
 public class LdapAuthenticationProviderConfigurer<B extends ProviderManagerBuilder<B>>
 		extends SecurityConfigurerAdapter<AuthenticationManager, B> {
 
+	private static final String APACHEDS_CLASSNAME = "org.apache.directory.server.core.DefaultDirectoryService";
+
+	private static final String UNBOUNDID_CLASSNAME = "com.unboundid.ldap.listener.InMemoryDirectoryServer";
+
+	private static final boolean apacheDsPresent;
+
+	private static final boolean unboundIdPresent;
+
 	private String groupRoleAttribute = "cn";
 
 	private String groupSearchBase = "";
@@ -90,6 +98,12 @@ public class LdapAuthenticationProviderConfigurer<B extends ProviderManagerBuild
 	private LdapAuthoritiesPopulator ldapAuthoritiesPopulator;
 
 	private GrantedAuthoritiesMapper authoritiesMapper;
+
+	static {
+		ClassLoader classLoader = LdapAuthenticationProviderConfigurer.class.getClassLoader();
+		apacheDsPresent = ClassUtils.isPresent(APACHEDS_CLASSNAME, classLoader);
+		unboundIdPresent = ClassUtils.isPresent(UNBOUNDID_CLASSNAME, classLoader);
+	}
 
 	private LdapAuthenticationProvider build() throws Exception {
 		BaseLdapPathContextSource contextSource = getContextSource();
@@ -122,6 +136,16 @@ public class LdapAuthenticationProviderConfigurer<B extends ProviderManagerBuild
 	 * @return the {@link ChannelSecurityConfigurer} for further customizations
 	 */
 	public LdapAuthenticationProviderConfigurer<B> withObjectPostProcessor(ObjectPostProcessor<?> objectPostProcessor) {
+		addObjectPostProcessor(objectPostProcessor);
+		return this;
+	}
+
+	/**
+	 * @deprecated
+	 */
+	@Deprecated(since = "6.4", forRemoval = true)
+	public LdapAuthenticationProviderConfigurer<B> withObjectPostProcessor(
+			org.springframework.security.config.annotation.ObjectPostProcessor<?> objectPostProcessor) {
 		addObjectPostProcessor(objectPostProcessor);
 		return this;
 	}
@@ -387,7 +411,7 @@ public class LdapAuthenticationProviderConfigurer<B extends ProviderManagerBuild
 	 */
 	public PasswordCompareConfigurer passwordCompare() {
 		return new PasswordCompareConfigurer().passwordAttribute("password")
-				.passwordEncoder(NoOpPasswordEncoder.getInstance());
+			.passwordEncoder(NoOpPasswordEncoder.getInstance());
 	}
 
 	/**
@@ -562,13 +586,13 @@ public class LdapAuthenticationProviderConfigurer<B extends ProviderManagerBuild
 		}
 
 		private void startEmbeddedLdapServer() throws Exception {
-			if (ClassUtils.isPresent(APACHEDS_CLASSNAME, getClass().getClassLoader())) {
+			if (apacheDsPresent) {
 				ApacheDSContainer apacheDsContainer = new ApacheDSContainer(this.root, this.ldif);
 				apacheDsContainer.setPort(getPort());
 				postProcess(apacheDsContainer);
 				this.port = apacheDsContainer.getLocalPort();
 			}
-			else if (ClassUtils.isPresent(UNBOUNDID_CLASSNAME, getClass().getClassLoader())) {
+			else if (unboundIdPresent) {
 				UnboundIdContainer unboundIdContainer = new UnboundIdContainer(this.root, this.ldif);
 				unboundIdContainer.setPort(getPort());
 				postProcess(unboundIdContainer);

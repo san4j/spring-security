@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2016 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,10 +19,12 @@ package org.springframework.security.config.http;
 import java.util.List;
 import java.util.Map;
 
+import io.micrometer.observation.ObservationRegistry;
 import jakarta.servlet.http.HttpServletRequest;
 import org.w3c.dom.Element;
 
 import org.springframework.beans.BeanMetadataElement;
+import org.springframework.beans.factory.FactoryBean;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.RuntimeBeanReference;
 import org.springframework.beans.factory.parsing.BeanComponentDefinition;
@@ -32,15 +34,14 @@ import org.springframework.beans.factory.xml.AbstractBeanDefinitionParser;
 import org.springframework.beans.factory.xml.BeanDefinitionParser;
 import org.springframework.beans.factory.xml.ParserContext;
 import org.springframework.beans.factory.xml.XmlReaderContext;
-import org.springframework.security.authorization.AuthenticatedAuthorizationManager;
 import org.springframework.security.authorization.AuthorizationManager;
+import org.springframework.security.authorization.ObservationAuthorizationManager;
 import org.springframework.security.config.Elements;
 import org.springframework.security.web.access.expression.DefaultHttpSecurityExpressionHandler;
 import org.springframework.security.web.access.expression.WebExpressionAuthorizationManager;
 import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 import org.springframework.security.web.access.intercept.RequestMatcherDelegatingAuthorizationManager;
-import org.springframework.security.web.util.matcher.AnyRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.util.StringUtils;
 import org.springframework.util.xml.DomUtils;
@@ -48,6 +49,10 @@ import org.springframework.util.xml.DomUtils;
 class AuthorizationFilterParser implements BeanDefinitionParser {
 
 	private static final String ATT_USE_EXPRESSIONS = "use-expressions";
+
+	private static final String ATT_ACCESS_DECISION_MANAGER_REF = "access-decision-manager-ref";
+
+	private static final String ATT_OBSERVATION_REGISTRY_REF = "observation-registry-ref";
 
 	private static final String ATT_HTTP_METHOD = "method";
 
@@ -57,20 +62,40 @@ class AuthorizationFilterParser implements BeanDefinitionParser {
 
 	private static final String ATT_SERVLET_PATH = "servlet-path";
 
+	private static final String ATT_FILTER_ALL_DISPATCHER_TYPES = "filter-all-dispatcher-types";
+
 	private String authorizationManagerRef;
+
+	private final BeanMetadataElement securityContextHolderStrategy;
+
+	AuthorizationFilterParser(BeanMetadataElement securityContextHolderStrategy) {
+		this.securityContextHolderStrategy = securityContextHolderStrategy;
+	}
 
 	@Override
 	public BeanDefinition parse(Element element, ParserContext parserContext) {
 		if (!isUseExpressions(element)) {
-			parserContext.getReaderContext().error("AuthorizationManager must be used with `use-expressions=\"true\"",
-					element);
+			parserContext.getReaderContext()
+				.error("AuthorizationManager must be used with `use-expressions=\"true\"; either add `use-authorization-manager=\"false\"` or `use-expressions=`\"false\"` in your `<http>` block",
+						element);
+			return null;
+		}
+		if (StringUtils.hasText(element.getAttribute(ATT_ACCESS_DECISION_MANAGER_REF))) {
+			parserContext.getReaderContext()
+				.error("AuthorizationManager cannot be used in conjunction with `access-decision-manager-ref`; either remove the reference to AccessDecisionManager or add `use-authorization-manager=\"false\"` to your `<http>` block",
+						element);
 			return null;
 		}
 		this.authorizationManagerRef = createAuthorizationManager(element, parserContext);
 		BeanDefinitionBuilder filterBuilder = BeanDefinitionBuilder.rootBeanDefinition(AuthorizationFilter.class);
 		filterBuilder.getRawBeanDefinition().setSource(parserContext.extractSource(element));
-		BeanDefinition filter = filterBuilder.addConstructorArgReference(this.authorizationManagerRef)
-				.getBeanDefinition();
+		filterBuilder.addConstructorArgReference(this.authorizationManagerRef);
+		if ("false".equals(element.getAttribute(ATT_FILTER_ALL_DISPATCHER_TYPES))) {
+			filterBuilder.addPropertyValue("shouldFilterAllDispatcherTypes", Boolean.FALSE);
+		}
+		BeanDefinition filter = filterBuilder
+			.addPropertyValue("securityContextHolderStrategy", this.securityContextHolderStrategy)
+			.getBeanDefinition();
 		String id = element.getAttribute(AbstractBeanDefinitionParser.ID_ATTRIBUTE);
 		if (StringUtils.hasText(id)) {
 			parserContext.registerComponent(new BeanComponentDefinition(filter, id));
@@ -94,22 +119,22 @@ class AuthorizationFilterParser implements BeanDefinitionParser {
 		if (expressionHandlerRef == null) {
 			expressionHandlerRef = registerDefaultExpressionHandler(parserContext);
 		}
-		MatcherType matcherType = MatcherType.fromElement(element);
+		MatcherType matcherType = MatcherType.fromElementOrMvc(element);
 		ManagedMap<BeanMetadataElement, BeanDefinition> matcherToExpression = new ManagedMap<>();
 		List<Element> interceptMessages = DomUtils.getChildElementsByTagName(element, Elements.INTERCEPT_URL);
 		for (Element interceptMessage : interceptMessages) {
 			String accessExpression = interceptMessage.getAttribute(ATT_ACCESS);
 			BeanDefinitionBuilder authorizationManager = BeanDefinitionBuilder
-					.rootBeanDefinition(WebExpressionAuthorizationManager.class);
+				.rootBeanDefinition(WebExpressionAuthorizationManager.class);
 			authorizationManager.addPropertyReference("expressionHandler", expressionHandlerRef);
 			authorizationManager.addConstructorArgValue(accessExpression);
 			BeanMetadataElement matcher = createMatcher(matcherType, interceptMessage, parserContext);
 			matcherToExpression.put(matcher, authorizationManager.getBeanDefinition());
 		}
 		BeanDefinitionBuilder mds = BeanDefinitionBuilder
-				.rootBeanDefinition(RequestMatcherDelegatingAuthorizationManagerFactory.class);
-		mds.setFactoryMethod("createRequestMatcherDelegatingAuthorizationManager");
-		mds.addConstructorArgValue(matcherToExpression);
+			.rootBeanDefinition(RequestMatcherDelegatingAuthorizationManagerFactory.class)
+			.addPropertyValue("requestMatcherMap", matcherToExpression)
+			.addPropertyValue("observationRegistry", getObservationRegistry(element));
 		return context.registerWithGeneratedName(mds.getBeanDefinition());
 	}
 
@@ -129,8 +154,9 @@ class AuthorizationFilterParser implements BeanDefinitionParser {
 			servletPath = null;
 		}
 		else if (!MatcherType.mvc.equals(matcherType)) {
-			parserContext.getReaderContext().error(
-					ATT_SERVLET_PATH + " is not applicable for request-matcher: '" + matcherType.name() + "'", urlElt);
+			parserContext.getReaderContext()
+				.error(ATT_SERVLET_PATH + " is not applicable for request-matcher: '" + matcherType.name() + "'",
+						urlElt);
 		}
 		return hasMatcherRef ? new RuntimeBeanReference(matcherRef)
 				: matcherType.createMatcher(parserContext, path, method, servletPath);
@@ -149,17 +175,47 @@ class AuthorizationFilterParser implements BeanDefinitionParser {
 		return !StringUtils.hasText(useExpressions) || "true".equals(useExpressions);
 	}
 
-	private static class RequestMatcherDelegatingAuthorizationManagerFactory {
+	private BeanMetadataElement getObservationRegistry(Element methodSecurityElmt) {
+		String holderStrategyRef = methodSecurityElmt.getAttribute(ATT_OBSERVATION_REGISTRY_REF);
+		if (StringUtils.hasText(holderStrategyRef)) {
+			return new RuntimeBeanReference(holderStrategyRef);
+		}
+		return BeanDefinitionBuilder.rootBeanDefinition(ObservationRegistryFactory.class).getBeanDefinition();
+	}
 
-		private static AuthorizationManager<HttpServletRequest> createRequestMatcherDelegatingAuthorizationManager(
-				Map<RequestMatcher, AuthorizationManager<RequestAuthorizationContext>> beans) {
+	public static final class RequestMatcherDelegatingAuthorizationManagerFactory
+			implements FactoryBean<AuthorizationManager<HttpServletRequest>> {
+
+		private Map<RequestMatcher, AuthorizationManager<RequestAuthorizationContext>> beans;
+
+		private ObservationRegistry observationRegistry = ObservationRegistry.NOOP;
+
+		@Override
+		public AuthorizationManager<HttpServletRequest> getObject() throws Exception {
 			RequestMatcherDelegatingAuthorizationManager.Builder builder = RequestMatcherDelegatingAuthorizationManager
-					.builder();
-			for (Map.Entry<RequestMatcher, AuthorizationManager<RequestAuthorizationContext>> entry : beans
-					.entrySet()) {
+				.builder();
+			for (Map.Entry<RequestMatcher, AuthorizationManager<RequestAuthorizationContext>> entry : this.beans
+				.entrySet()) {
 				builder.add(entry.getKey(), entry.getValue());
 			}
-			return builder.add(AnyRequestMatcher.INSTANCE, AuthenticatedAuthorizationManager.authenticated()).build();
+			AuthorizationManager<HttpServletRequest> manager = builder.build();
+			if (!this.observationRegistry.isNoop()) {
+				return new ObservationAuthorizationManager<>(this.observationRegistry, manager);
+			}
+			return manager;
+		}
+
+		@Override
+		public Class<?> getObjectType() {
+			return AuthorizationManager.class;
+		}
+
+		public void setRequestMatcherMap(Map<RequestMatcher, AuthorizationManager<RequestAuthorizationContext>> beans) {
+			this.beans = beans;
+		}
+
+		public void setObservationRegistry(ObservationRegistry observationRegistry) {
+			this.observationRegistry = observationRegistry;
 		}
 
 	}
@@ -171,8 +227,24 @@ class AuthorizationFilterParser implements BeanDefinitionParser {
 
 		@Override
 		public DefaultHttpSecurityExpressionHandler getBean() {
-			this.handler.setDefaultRolePrefix(this.rolePrefix);
+			if (this.rolePrefix != null) {
+				this.handler.setDefaultRolePrefix(this.rolePrefix);
+			}
 			return this.handler;
+		}
+
+	}
+
+	static class ObservationRegistryFactory implements FactoryBean<ObservationRegistry> {
+
+		@Override
+		public ObservationRegistry getObject() throws Exception {
+			return ObservationRegistry.NOOP;
+		}
+
+		@Override
+		public Class<?> getObjectType() {
+			return ObservationRegistry.class;
 		}
 
 	}

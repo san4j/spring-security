@@ -58,7 +58,9 @@ import org.springframework.web.client.RestTemplate;
  * @author Josh Cummings
  * @author MD Sayem Ahmed
  * @since 5.2
+ * @deprecated Please use {@link SpringOpaqueTokenIntrospector} instead
  */
+@Deprecated
 public class NimbusOpaqueTokenIntrospector implements OpaqueTokenIntrospector {
 
 	private static final String AUTHORITY_PREFIX = "SCOPE_";
@@ -177,7 +179,7 @@ public class NimbusOpaqueTokenIntrospector implements OpaqueTokenIntrospector {
 					+ contentType + "' is not compatible with JSON");
 		}
 
-		HTTPResponse response = new HTTPResponse(responseEntity.getStatusCodeValue());
+		HTTPResponse response = new HTTPResponse(responseEntity.getStatusCode().value());
 		response.setHeader(HttpHeaders.CONTENT_TYPE, contentType.toString());
 		response.setContent(responseEntity.getBody());
 

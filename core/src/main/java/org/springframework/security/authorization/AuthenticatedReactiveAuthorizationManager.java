@@ -27,8 +27,9 @@ import org.springframework.security.core.Authentication;
  * authenticated.
  *
  * @param <T> The type of object authorization is being performed against. This does not
+ * matter since the authorization decision does not use the object.
  * @author Rob Winch
- * @since 5.0 matter since the authorization decision does not use the object.
+ * @since 5.0
  */
 public class AuthenticatedReactiveAuthorizationManager<T> implements ReactiveAuthorizationManager<T> {
 
@@ -39,8 +40,9 @@ public class AuthenticatedReactiveAuthorizationManager<T> implements ReactiveAut
 
 	@Override
 	public Mono<AuthorizationDecision> check(Mono<Authentication> authentication, T object) {
-		return authentication.filter(this::isNotAnonymous).map(this::getAuthorizationDecision)
-				.defaultIfEmpty(new AuthorizationDecision(false));
+		return authentication.filter(this::isNotAnonymous)
+			.map(this::getAuthorizationDecision)
+			.defaultIfEmpty(new AuthorizationDecision(false));
 	}
 
 	private AuthorizationDecision getAuthorizationDecision(Authentication authentication) {

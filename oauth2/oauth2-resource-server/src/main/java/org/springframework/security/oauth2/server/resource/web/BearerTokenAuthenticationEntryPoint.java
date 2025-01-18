@@ -28,6 +28,7 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.server.resource.BearerTokenError;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.util.StringUtils;
 
@@ -73,8 +74,7 @@ public final class BearerTokenAuthenticationEntryPoint implements Authentication
 			if (StringUtils.hasText(error.getUri())) {
 				parameters.put("error_uri", error.getUri());
 			}
-			if (error instanceof BearerTokenError) {
-				BearerTokenError bearerTokenError = (BearerTokenError) error;
+			if (error instanceof BearerTokenError bearerTokenError) {
 				if (StringUtils.hasText(bearerTokenError.getScope())) {
 					parameters.put("scope", bearerTokenError.getScope());
 				}

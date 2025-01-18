@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ package org.springframework.security.oauth2.core.endpoint;
  * endpoint.
  *
  * @author Joe Grandja
+ * @author Steve Riesenberg
  * @since 5.0
  * @see <a target="_blank" href="https://tools.ietf.org/html/rfc6749#section-11.2">11.2
  * OAuth Parameters Registry</a>
@@ -149,6 +150,85 @@ public final class OAuth2ParameterNames {
 	 * @since 5.5
 	 */
 	public static final String TOKEN_TYPE_HINT = "token_type_hint";
+
+	/**
+	 * {@code device_code} - used in Device Authorization Response and Device Access Token
+	 * Request.
+	 * @since 6.1
+	 */
+	public static final String DEVICE_CODE = "device_code";
+
+	/**
+	 * {@code user_code} - used in Device Authorization Response.
+	 * @since 6.1
+	 */
+	public static final String USER_CODE = "user_code";
+
+	/**
+	 * {@code verification_uri} - used in Device Authorization Response.
+	 * @since 6.1
+	 */
+	public static final String VERIFICATION_URI = "verification_uri";
+
+	/**
+	 * {@code verification_uri_complete} - used in Device Authorization Response.
+	 * @since 6.1
+	 */
+	public static final String VERIFICATION_URI_COMPLETE = "verification_uri_complete";
+
+	/**
+	 * {@code interval} - used in Device Authorization Response.
+	 * @since 6.1
+	 */
+	public static final String INTERVAL = "interval";
+
+	/**
+	 * {@code audience} - used in Token Exchange Access Token Request.
+	 * @since 6.3
+	 */
+	public static final String AUDIENCE = "audience";
+
+	/**
+	 * {@code resource} - used in Token Exchange Access Token Request.
+	 * @since 6.3
+	 */
+	public static final String RESOURCE = "resource";
+
+	/**
+	 * {@code requested_token_type} - used in Token Exchange Access Token Request.
+	 * @since 6.3
+	 */
+	public static final String REQUESTED_TOKEN_TYPE = "requested_token_type";
+
+	/**
+	 * {@code issued_token_type} - used in Token Exchange Access Token Response.
+	 * @since 6.3
+	 */
+	public static final String ISSUED_TOKEN_TYPE = "issued_token_type";
+
+	/**
+	 * {@code subject_token} - used in Token Exchange Access Token Request.
+	 * @since 6.3
+	 */
+	public static final String SUBJECT_TOKEN = "subject_token";
+
+	/**
+	 * {@code subject_token_type} - used in Token Exchange Access Token Request.
+	 * @since 6.3
+	 */
+	public static final String SUBJECT_TOKEN_TYPE = "subject_token_type";
+
+	/**
+	 * {@code actor_token} - used in Token Exchange Access Token Request.
+	 * @since 6.3
+	 */
+	public static final String ACTOR_TOKEN = "actor_token";
+
+	/**
+	 * {@code actor_token_type} - used in Token Exchange Access Token Request.
+	 * @since 6.3
+	 */
+	public static final String ACTOR_TOKEN_TYPE = "actor_token_type";
 
 	private OAuth2ParameterNames() {
 	}

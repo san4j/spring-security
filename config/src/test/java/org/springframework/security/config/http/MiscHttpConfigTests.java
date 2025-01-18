@@ -68,6 +68,7 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.InsufficientAuthenticationException;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.authentication.jaas.AuthorityGranter;
+import org.springframework.security.config.TestDeferredSecurityContext;
 import org.springframework.security.config.test.SpringTestContext;
 import org.springframework.security.config.test.SpringTestContextExtension;
 import org.springframework.security.core.Authentication;
@@ -84,6 +85,7 @@ import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.access.ExceptionTranslationFilter;
 import org.springframework.security.web.access.channel.ChannelProcessingFilter;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.access.intercept.FilterSecurityInterceptor;
 import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
@@ -91,6 +93,7 @@ import org.springframework.security.web.authentication.logout.LogoutFilter;
 import org.springframework.security.web.authentication.preauth.x509.X509AuthenticationFilter;
 import org.springframework.security.web.authentication.ui.DefaultLoginPageGeneratingFilter;
 import org.springframework.security.web.authentication.ui.DefaultLogoutPageGeneratingFilter;
+import org.springframework.security.web.authentication.ui.DefaultResourcesFilter;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.security.web.context.HttpRequestResponseHolder;
 import org.springframework.security.web.context.SecurityContextHolderFilter;
@@ -106,7 +109,6 @@ import org.springframework.security.web.savedrequest.RequestCache;
 import org.springframework.security.web.savedrequest.RequestCacheAwareFilter;
 import org.springframework.security.web.servletapi.SecurityContextHolderAwareRequestFilter;
 import org.springframework.security.web.session.DisableEncodeUrlFilter;
-import org.springframework.security.web.session.SessionManagementFilter;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -323,6 +325,13 @@ public class MiscHttpConfigTests {
 	}
 
 	@Test
+	public void configureWhenOncePerRequestIsTrueThenFilterSecurityInterceptorObserveOncePerRequestIsTrue() {
+		this.spring.configLocations(xml("OncePerRequestTrue")).autowire();
+		FilterSecurityInterceptor filterSecurityInterceptor = getFilter(FilterSecurityInterceptor.class);
+		assertThat(filterSecurityInterceptor.isObserveOncePerRequest()).isTrue();
+	}
+
+	@Test
 	public void requestWhenCustomHttpBasicEntryPointRefThenInvokesOnCommence() throws Exception {
 		this.spring.configLocations(xml("CustomHttpBasicEntryPointRef")).autowire();
 		AuthenticationEntryPoint entryPoint = this.spring.getContext().getBean(AuthenticationEntryPoint.class);
@@ -355,23 +364,22 @@ public class MiscHttpConfigTests {
 		this.spring.configLocations(xml("CustomFilters")).autowire();
 		List<Filter> filters = getFilters("/");
 		Class<?> userFilterClass = this.spring.getContext().getBean("userFilter").getClass();
-		assertThat(filters).extracting((Extractor<Filter, Class<?>>) (filter) -> filter.getClass()).containsSubsequence(
-				userFilterClass, userFilterClass, SecurityContextHolderFilter.class, LogoutFilter.class,
-				userFilterClass);
+		assertThat(filters).extracting((Extractor<Filter, Class<?>>) (filter) -> filter.getClass())
+			.containsSubsequence(userFilterClass, userFilterClass, SecurityContextHolderFilter.class,
+					LogoutFilter.class, userFilterClass);
 	}
 
 	@Test
 	public void configureWhenTwoFiltersWithSameOrderThenException() {
 		assertThatExceptionOfType(BeanDefinitionParsingException.class)
-				.isThrownBy(() -> this.spring.configLocations(xml("CollidingFilters")).autowire());
+			.isThrownBy(() -> this.spring.configLocations(xml("CollidingFilters")).autowire());
 	}
 
 	@Test
 	public void configureWhenUsingX509ThenAddsX509FilterCorrectly() {
 		this.spring.configLocations(xml("X509")).autowire();
 		assertThat(getFilters("/")).extracting((Extractor<Filter, Class<?>>) (filter) -> filter.getClass())
-				.containsSubsequence(CsrfFilter.class, X509AuthenticationFilter.class,
-						ExceptionTranslationFilter.class);
+			.containsSubsequence(CsrfFilter.class, X509AuthenticationFilter.class, ExceptionTranslationFilter.class);
 	}
 
 	@Test
@@ -402,7 +410,7 @@ public class MiscHttpConfigTests {
 	@Test
 	public void configureWhenUsingInvalidLogoutSuccessUrlThenThrowsException() {
 		assertThatExceptionOfType(BeanCreationException.class)
-				.isThrownBy(() -> this.spring.configLocations(xml("InvalidLogoutSuccessUrl")).autowire());
+			.isThrownBy(() -> this.spring.configLocations(xml("InvalidLogoutSuccessUrl")).autowire());
 	}
 
 	@Test
@@ -410,7 +418,7 @@ public class MiscHttpConfigTests {
 		this.spring.configLocations(xml("DeleteCookies")).autowire();
 		MvcResult result = this.mvc.perform(post("/logout").with(csrf())).andReturn();
 		List<String> values = result.getResponse().getHeaders("Set-Cookie");
-		assertThat(values.size()).isEqualTo(2);
+		assertThat(values).hasSize(2);
 		assertThat(values).extracting((value) -> value.split("=")[0]).contains("JSESSIONID", "mycookie");
 	}
 
@@ -450,7 +458,7 @@ public class MiscHttpConfigTests {
 	public void configureWhenUsingCustomUserDetailsServiceThenBeanPostProcessorsAreStillApplied() {
 		this.spring.configLocations(xml("Sec750")).autowire();
 		BeanNameCollectingPostProcessor postProcessor = this.spring.getContext()
-				.getBean(BeanNameCollectingPostProcessor.class);
+			.getBean(BeanNameCollectingPostProcessor.class);
 		assertThat(postProcessor.getBeforeInitPostProcessedBeans()).contains("authenticationProvider", "userService");
 		assertThat(postProcessor.getAfterInitPostProcessedBeans()).contains("authenticationProvider", "userService");
 	}
@@ -472,15 +480,14 @@ public class MiscHttpConfigTests {
 		this.spring.configLocations(xml("SecurityContextRepository")).autowire();
 		SecurityContextRepository repository = this.spring.getContext().getBean(SecurityContextRepository.class);
 		SecurityContext context = new SecurityContextImpl(new TestingAuthenticationToken("user", "password"));
-		given(repository.loadContext(any(HttpServletRequest.class))).willReturn(() -> context);
+		given(repository.loadDeferredContext(any(HttpServletRequest.class)))
+			.willReturn(new TestDeferredSecurityContext(context, false));
 		// @formatter:off
 		MvcResult result = this.mvc.perform(get("/protected").with(userCredentials()))
 				.andExpect(status().isOk())
 				.andReturn();
 		// @formatter:on
 		assertThat(result.getRequest().getSession(false)).isNotNull();
-		verify(repository, atLeastOnce()).saveContext(any(SecurityContext.class), any(HttpServletRequest.class),
-				any(HttpServletResponse.class));
 	}
 
 	@Test
@@ -489,7 +496,8 @@ public class MiscHttpConfigTests {
 		this.spring.configLocations(xml("ExplicitSaveAndExplicitRepository")).autowire();
 		SecurityContextRepository repository = this.spring.getContext().getBean(SecurityContextRepository.class);
 		SecurityContext context = new SecurityContextImpl(new TestingAuthenticationToken("user", "password"));
-		given(repository.loadContext(any(HttpServletRequest.class))).willReturn(() -> context);
+		given(repository.loadDeferredContext(any(HttpServletRequest.class)))
+			.willReturn(new TestDeferredSecurityContext(context, false));
 		// @formatter:off
 		MvcResult result = this.mvc.perform(formLogin())
 				.andExpect(status().is3xxRedirection())
@@ -510,7 +518,7 @@ public class MiscHttpConfigTests {
 				.andReturn();
 		// @formatter:on
 		assertThat(repository.loadContext(new HttpRequestResponseHolder(result.getRequest(), result.getResponse()))
-				.getAuthentication()).isNotNull();
+			.getAuthentication()).isNotNull();
 	}
 
 	@Test
@@ -531,7 +539,7 @@ public class MiscHttpConfigTests {
 		this.spring.configLocations(xml("ExpressionHandler")).autowire();
 		PermissionEvaluator permissionEvaluator = this.spring.getContext().getBean(PermissionEvaluator.class);
 		given(permissionEvaluator.hasPermission(any(Authentication.class), any(Object.class), any(Object.class)))
-				.willReturn(false);
+			.willReturn(false);
 		// @formatter:off
 		this.mvc.perform(get("/").with(userCredentials()))
 				.andExpect(status().isForbidden());
@@ -577,16 +585,12 @@ public class MiscHttpConfigTests {
 		FilterChainProxy proxy = this.spring.getContext().getBean(FilterChainProxy.class);
 		proxy.doFilter(request, responseToSpy, (req, resp) -> {
 			HttpServletResponse httpResponse = (HttpServletResponse) resp;
-			httpResponse.encodeUrl("/");
 			httpResponse.encodeURL("/");
-			httpResponse.encodeRedirectUrl("/");
 			httpResponse.encodeRedirectURL("/");
 			httpResponse.getWriter().write("encodeRedirect");
 		});
 		verify(responseToSpy, never()).encodeRedirectURL(any());
-		verify(responseToSpy, never()).encodeRedirectUrl(any());
 		verify(responseToSpy, never()).encodeURL(any());
-		verify(responseToSpy, never()).encodeUrl(any());
 		assertThat(responseToSpy.getContentAsString()).isEqualTo("encodeRedirect");
 	}
 
@@ -845,16 +849,15 @@ public class MiscHttpConfigTests {
 		assertThat(filters.next()).isInstanceOf(CsrfFilter.class);
 		assertThat(filters.next()).isInstanceOf(LogoutFilter.class);
 		assertThat(filters.next()).isInstanceOf(UsernamePasswordAuthenticationFilter.class);
+		assertThat(filters.next()).isInstanceOf(DefaultResourcesFilter.class);
 		assertThat(filters.next()).isInstanceOf(DefaultLoginPageGeneratingFilter.class);
 		assertThat(filters.next()).isInstanceOf(DefaultLogoutPageGeneratingFilter.class);
 		assertThat(filters.next()).isInstanceOf(BasicAuthenticationFilter.class);
 		assertThat(filters.next()).isInstanceOf(RequestCacheAwareFilter.class);
 		assertThat(filters.next()).isInstanceOf(SecurityContextHolderAwareRequestFilter.class);
 		assertThat(filters.next()).isInstanceOf(AnonymousAuthenticationFilter.class);
-		assertThat(filters.next()).isInstanceOf(SessionManagementFilter.class);
 		assertThat(filters.next()).isInstanceOf(ExceptionTranslationFilter.class);
-		assertThat(filters.next()).isInstanceOf(FilterSecurityInterceptor.class)
-				.hasFieldOrPropertyWithValue("observeOncePerRequest", false);
+		assertThat(filters.next()).isInstanceOf(AuthorizationFilter.class);
 	}
 
 	private <T extends Filter> T getFilter(Class<T> filterClass) {
@@ -924,8 +927,10 @@ public class MiscHttpConfigTests {
 
 		@GetMapping("/roles")
 		String roles(Authentication authentication) {
-			return authentication.getAuthorities().stream().map(GrantedAuthority::getAuthority)
-					.collect(Collectors.joining(","));
+			return authentication.getAuthorities()
+				.stream()
+				.map(GrantedAuthority::getAuthority)
+				.collect(Collectors.joining(","));
 		}
 
 		@GetMapping("/details")
@@ -1026,16 +1031,6 @@ public class MiscHttpConfigTests {
 
 		@Override
 		public String encodeRedirectURL(String url) {
-			throw new RuntimeException("Unexpected invocation of encodeURL");
-		}
-
-		@Override
-		public String encodeUrl(String url) {
-			throw new RuntimeException("Unexpected invocation of encodeURL");
-		}
-
-		@Override
-		public String encodeRedirectUrl(String url) {
 			throw new RuntimeException("Unexpected invocation of encodeURL");
 		}
 

@@ -54,16 +54,16 @@ public class PersistentTokenBasedRememberMeServicesTests {
 	@Test
 	public void loginIsRejectedWithWrongNumberOfCookieTokens() {
 		assertThatExceptionOfType(InvalidCookieException.class)
-				.isThrownBy(() -> this.services.processAutoLoginCookie(new String[] { "series", "token", "extra" },
-						new MockHttpServletRequest(), new MockHttpServletResponse()));
+			.isThrownBy(() -> this.services.processAutoLoginCookie(new String[] { "series", "token", "extra" },
+					new MockHttpServletRequest(), new MockHttpServletResponse()));
 	}
 
 	@Test
 	public void loginIsRejectedWhenNoTokenMatchingSeriesIsFound() {
 		this.services = create(null);
 		assertThatExceptionOfType(RememberMeAuthenticationException.class)
-				.isThrownBy(() -> this.services.processAutoLoginCookie(new String[] { "series", "token" },
-						new MockHttpServletRequest(), new MockHttpServletResponse()));
+			.isThrownBy(() -> this.services.processAutoLoginCookie(new String[] { "series", "token" },
+					new MockHttpServletRequest(), new MockHttpServletResponse()));
 	}
 
 	@Test
@@ -72,16 +72,16 @@ public class PersistentTokenBasedRememberMeServicesTests {
 				new Date(System.currentTimeMillis() - TimeUnit.SECONDS.toMillis(1) - 100)));
 		this.services.setTokenValiditySeconds(1);
 		assertThatExceptionOfType(RememberMeAuthenticationException.class)
-				.isThrownBy(() -> this.services.processAutoLoginCookie(new String[] { "series", "token" },
-						new MockHttpServletRequest(), new MockHttpServletResponse()));
+			.isThrownBy(() -> this.services.processAutoLoginCookie(new String[] { "series", "token" },
+					new MockHttpServletRequest(), new MockHttpServletResponse()));
 	}
 
 	@Test
 	public void cookieTheftIsDetectedWhenSeriesAndTokenDontMatch() {
 		this.services = create(new PersistentRememberMeToken("joe", "series", "wrongtoken", new Date()));
 		assertThatExceptionOfType(CookieTheftException.class)
-				.isThrownBy(() -> this.services.processAutoLoginCookie(new String[] { "series", "token" },
-						new MockHttpServletRequest(), new MockHttpServletResponse()));
+			.isThrownBy(() -> this.services.processAutoLoginCookie(new String[] { "series", "token" },
+					new MockHttpServletRequest(), new MockHttpServletResponse()));
 	}
 
 	@Test
@@ -93,7 +93,7 @@ public class PersistentTokenBasedRememberMeServicesTests {
 		this.services.processAutoLoginCookie(new String[] { "series", "token" }, new MockHttpServletRequest(),
 				response);
 		assertThat(this.repo.getStoredToken().getSeries()).isEqualTo("series");
-		assertThat(this.repo.getStoredToken().getTokenValue().length()).isEqualTo(16);
+		assertThat(this.repo.getStoredToken().getTokenValue()).hasSize(16);
 		String[] cookie = this.services.decodeCookie(response.getCookie("mycookiename").getValue());
 		assertThat(cookie[0]).isEqualTo("series");
 		assertThat(cookie[1]).isEqualTo(this.repo.getStoredToken().getTokenValue());
@@ -108,8 +108,8 @@ public class PersistentTokenBasedRememberMeServicesTests {
 		MockHttpServletResponse response = new MockHttpServletResponse();
 		this.services.loginSuccess(new MockHttpServletRequest(), response,
 				UsernamePasswordAuthenticationToken.unauthenticated("joe", "password"));
-		assertThat(this.repo.getStoredToken().getSeries().length()).isEqualTo(16);
-		assertThat(this.repo.getStoredToken().getTokenValue().length()).isEqualTo(16);
+		assertThat(this.repo.getStoredToken().getSeries()).hasSize(16);
+		assertThat(this.repo.getStoredToken().getTokenValue()).hasSize(16);
 		String[] cookie = this.services.decodeCookie(response.getCookie("mycookiename").getValue());
 		assertThat(cookie[0]).isEqualTo(this.repo.getStoredToken().getSeries());
 		assertThat(cookie[1]).isEqualTo(this.repo.getStoredToken().getTokenValue());

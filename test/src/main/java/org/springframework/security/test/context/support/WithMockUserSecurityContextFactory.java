@@ -33,7 +33,7 @@ import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
 /**
- * A {@link WithUserDetailsSecurityContextFactory} that works with {@link WithMockUser}.
+ * A {@link WithSecurityContextFactory} that works with {@link WithMockUser}.
  *
  * @author Rob Winch
  * @since 4.0
@@ -42,7 +42,7 @@ import org.springframework.util.StringUtils;
 final class WithMockUserSecurityContextFactory implements WithSecurityContextFactory<WithMockUser> {
 
 	private SecurityContextHolderStrategy securityContextHolderStrategy = SecurityContextHolder
-			.getContextHolderStrategy();
+		.getContextHolderStrategy();
 
 	@Override
 	public SecurityContext createSecurityContext(WithMockUser withUser) {

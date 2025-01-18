@@ -215,12 +215,12 @@ public class PasswordPolicyResponseControl extends PasswordPolicyControl {
 				else if (tag == 1) {
 					BERIntegral error = (BERIntegral) elt.getValue();
 					PasswordPolicyResponseControl.this.errorStatus = PasswordPolicyErrorStatus.values()[error
-							.getValue()];
+						.getValue()];
 				}
 			}
 		}
 
-		class SpecificTagDecoder extends BERTagDecoder {
+		static class SpecificTagDecoder extends BERTagDecoder {
 
 			/** Allows us to remember which of the two options we're decoding */
 			private Boolean inChoice = null;

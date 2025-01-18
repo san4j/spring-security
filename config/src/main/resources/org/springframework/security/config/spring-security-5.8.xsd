@@ -1385,6 +1385,13 @@
                 </xs:documentation>
          </xs:annotation>
       </xs:attribute>
+      <xs:attribute name="filter-all-dispatcher-types" type="xs:boolean">
+         <xs:annotation>
+            <xs:documentation>Corresponds to the shouldFilterAllDispatcherTypes property of AuthorizationFilter. Only
+                works when use-authorization-manager=true. Defauls to "false".
+                </xs:documentation>
+         </xs:annotation>
+      </xs:attribute>
       <xs:attribute name="disable-url-rewriting" type="xs:boolean">
          <xs:annotation>
             <xs:documentation>Prevents the jsessionid parameter from being added to rendered URLs. Defaults to "true"
@@ -2057,6 +2064,13 @@
       <xs:attribute name="introspector-ref" type="xs:token">
          <xs:annotation>
             <xs:documentation>Reference to an OpaqueTokenIntrospector
+                </xs:documentation>
+         </xs:annotation>
+      </xs:attribute>
+      <xs:attribute name="authentication-converter-ref" type="xs:token">
+         <xs:annotation>
+            <xs:documentation>Reference to an OpaqueTokenAuthenticationConverter responsible for converting successful
+                introspection result into an Authentication.
                 </xs:documentation>
          </xs:annotation>
       </xs:attribute>
@@ -3249,15 +3263,9 @@
                 </xs:documentation>
          </xs:annotation>
       </xs:attribute>
-      <xs:attribute name="request-attribute-handler-ref" type="xs:token">
+      <xs:attribute name="request-handler-ref" type="xs:token">
          <xs:annotation>
-            <xs:documentation>The CsrfTokenRequestAttributeHandler to use. The default is CsrfTokenRequestProcessor.
-                </xs:documentation>
-         </xs:annotation>
-      </xs:attribute>
-      <xs:attribute name="request-resolver-ref" type="xs:token">
-         <xs:annotation>
-            <xs:documentation>The CsrfTokenRequestResolver to use. The default is CsrfTokenRequestProcessor.
+            <xs:documentation>The CsrfTokenRequestHandler to use. The default is CsrfTokenRequestAttributeHandler.
                 </xs:documentation>
          </xs:annotation>
       </xs:attribute>
@@ -3372,7 +3380,10 @@
   </xs:attributeGroup>
   <xs:element name="hpkp">
       <xs:annotation>
-         <xs:documentation>Adds support for HTTP Public Key Pinning (HPKP).
+         <xs:documentation>Deprecated. The HPKP header no longer works in modern browsers, see &lt;a
+                href="https://owasp.org/www-community/controls/Certificate_and_Public_Key_Pinning"&gt;Certificate
+                and Public Key Pinning&lt;/a&gt; for more context Adds support for HTTP Public Key Pinning
+                (HPKP).
                 </xs:documentation>
       </xs:annotation>
       <xs:complexType>
@@ -3647,6 +3658,20 @@
             <xs:documentation>Add mode=block to the header or not, default is on.
                 </xs:documentation>
          </xs:annotation>
+      </xs:attribute>
+      <xs:attribute name="header-value">
+         <xs:annotation>
+            <xs:documentation>Specify the value for the X-Xss-Protection header. When set, overrides both enabled and
+                block attributes.
+                </xs:documentation>
+         </xs:annotation>
+         <xs:simpleType>
+            <xs:restriction base="xs:token">
+               <xs:enumeration value="0"/>
+               <xs:enumeration value="1"/>
+               <xs:enumeration value="1; mode=block"/>
+            </xs:restriction>
+         </xs:simpleType>
       </xs:attribute>
   </xs:attributeGroup>
   <xs:element name="content-type-options">

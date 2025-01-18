@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,8 @@ import java.util.List;
 import java.util.concurrent.Callable;
 
 import com.google.common.net.HttpHeaders;
+import io.micrometer.observation.ObservationRegistry;
+import jakarta.servlet.Filter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.Test;
@@ -39,13 +41,21 @@ import org.springframework.core.io.support.SpringFactoriesLoader;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.AuthenticationEventPublisher;
+import org.springframework.security.authentication.AuthenticationProvider;
+import org.springframework.security.authentication.TestingAuthenticationProvider;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.authentication.event.AbstractAuthenticationEvent;
 import org.springframework.security.authentication.event.AbstractAuthenticationFailureEvent;
 import org.springframework.security.authentication.event.AuthenticationSuccessEvent;
+import org.springframework.security.authentication.password.CompromisedPasswordChecker;
+import org.springframework.security.authentication.password.CompromisedPasswordDecision;
+import org.springframework.security.authentication.password.CompromisedPasswordException;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.SecurityContextChangedListenerConfig;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.annotation.web.configurers.AnonymousConfigurer;
+import org.springframework.security.config.annotation.web.configurers.FormLoginConfigurer;
 import org.springframework.security.config.test.SpringTestContext;
 import org.springframework.security.config.test.SpringTestContextExtension;
 import org.springframework.security.core.Authentication;
@@ -53,26 +63,40 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.core.context.SecurityContextHolderStrategy;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
+import org.springframework.security.provisioning.UserDetailsManager;
 import org.springframework.security.test.web.servlet.RequestCacheResultMatcher;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.authentication.ui.DefaultLoginPageGeneratingFilter;
+import org.springframework.security.web.authentication.ui.DefaultLogoutPageGeneratingFilter;
 import org.springframework.security.web.header.writers.frameoptions.XFrameOptionsHeaderWriter;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.web.accept.ContentNegotiationStrategy;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.context.request.NativeWebRequest;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.filter.CorsFilter;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.springframework.security.config.Customizer.withDefaults;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestBuilders.formLogin;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.security.test.web.servlet.response.SecurityMockMvcResultMatchers.authenticated;
+import static org.springframework.security.test.web.servlet.response.SecurityMockMvcResultMatchers.unauthenticated;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -118,7 +142,7 @@ public class HttpSecurityConfigurationTests {
 				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-cache, no-store, max-age=0, must-revalidate"))
 				.andExpect(header().string(HttpHeaders.EXPIRES, "0"))
 				.andExpect(header().string(HttpHeaders.PRAGMA, "no-cache"))
-				.andExpect(header().string(HttpHeaders.X_XSS_PROTECTION, "1; mode=block"))
+				.andExpect(header().string(HttpHeaders.X_XSS_PROTECTION, "0"))
 				.andReturn();
 		// @formatter:on
 		assertThat(mvcResult.getResponse().getHeaderNames()).containsExactlyInAnyOrder(
@@ -151,8 +175,10 @@ public class HttpSecurityConfigurationTests {
 
 	@Test
 	public void asyncDispatchWhenCustomSecurityContextHolderStrategyThenUses() throws Exception {
-		this.spring.register(DefaultWithFilterChainConfig.class, SecurityContextChangedListenerConfig.class,
-				NameController.class).autowire();
+		this.spring
+			.register(DefaultWithFilterChainConfig.class, SecurityContextChangedListenerConfig.class,
+					NameController.class)
+			.autowire();
 		// @formatter:off
 		MockHttpServletRequestBuilder requestWithBob = get("/name").with(user("Bob"));
 		MvcResult mvcResult = this.mockMvc.perform(requestWithBob)
@@ -245,8 +271,8 @@ public class HttpSecurityConfigurationTests {
 	@Test
 	public void loginWhenUsingDefaultThenAuthenticationEventPublished() throws Exception {
 		this.spring
-				.register(SecurityEnabledConfig.class, UserDetailsConfig.class, AuthenticationEventListenerConfig.class)
-				.autowire();
+			.register(SecurityEnabledConfig.class, UserDetailsConfig.class, AuthenticationEventListenerConfig.class)
+			.autowire();
 		AuthenticationEventListenerConfig.clearEvents();
 		this.mockMvc.perform(formLogin()).andExpect(status().is3xxRedirection());
 		assertThat(AuthenticationEventListenerConfig.EVENTS).isNotEmpty();
@@ -256,8 +282,8 @@ public class HttpSecurityConfigurationTests {
 	@Test
 	public void loginWhenUsingDefaultAndNoUserDetailsServiceThenAuthenticationEventPublished() throws Exception {
 		this.spring
-				.register(SecurityEnabledConfig.class, UserDetailsConfig.class, AuthenticationEventListenerConfig.class)
-				.autowire();
+			.register(SecurityEnabledConfig.class, UserDetailsConfig.class, AuthenticationEventListenerConfig.class)
+			.autowire();
 		AuthenticationEventListenerConfig.clearEvents();
 		this.mockMvc.perform(formLogin()).andExpect(status().is3xxRedirection());
 		assertThat(AuthenticationEventListenerConfig.EVENTS).isNotEmpty();
@@ -266,8 +292,10 @@ public class HttpSecurityConfigurationTests {
 
 	@Test
 	public void loginWhenUsingCustomAuthenticationEventPublisherThenAuthenticationEventPublished() throws Exception {
-		this.spring.register(SecurityEnabledConfig.class, UserDetailsConfig.class,
-				CustomAuthenticationEventPublisherConfig.class).autowire();
+		this.spring
+			.register(SecurityEnabledConfig.class, UserDetailsConfig.class,
+					CustomAuthenticationEventPublisherConfig.class)
+			.autowire();
 		CustomAuthenticationEventPublisherConfig.clearEvents();
 		this.mockMvc.perform(formLogin()).andExpect(status().is3xxRedirection());
 		assertThat(CustomAuthenticationEventPublisherConfig.EVENTS).isNotEmpty();
@@ -287,30 +315,132 @@ public class HttpSecurityConfigurationTests {
 	@Test
 	public void configureWhenAuthorizeHttpRequestsBeforeAuthorizeRequestThenException() {
 		assertThatExceptionOfType(BeanCreationException.class)
-				.isThrownBy(
-						() -> this.spring.register(AuthorizeHttpRequestsBeforeAuthorizeRequestsConfig.class).autowire())
-				.withMessageContaining(
-						"authorizeHttpRequests cannot be used in conjunction with authorizeRequests. Please select just one.");
+			.isThrownBy(() -> this.spring.register(AuthorizeHttpRequestsBeforeAuthorizeRequestsConfig.class).autowire())
+			.withMessageContaining(
+					"authorizeHttpRequests cannot be used in conjunction with authorizeRequests. Please select just one.");
 	}
 
 	@Test
 	public void configureWhenAuthorizeHttpRequestsAfterAuthorizeRequestThenException() {
 		assertThatExceptionOfType(BeanCreationException.class)
-				.isThrownBy(
-						() -> this.spring.register(AuthorizeHttpRequestsAfterAuthorizeRequestsConfig.class).autowire())
-				.withMessageContaining(
-						"authorizeHttpRequests cannot be used in conjunction with authorizeRequests. Please select just one.");
+			.isThrownBy(() -> this.spring.register(AuthorizeHttpRequestsAfterAuthorizeRequestsConfig.class).autowire())
+			.withMessageContaining(
+					"authorizeHttpRequests cannot be used in conjunction with authorizeRequests. Please select just one.");
 	}
 
 	@Test
 	public void configureWhenDefaultConfigurerAsSpringFactoryThenDefaultConfigurerApplied() {
 		DefaultConfigurer configurer = new DefaultConfigurer();
-		this.springFactoriesLoader.when(
-				() -> SpringFactoriesLoader.loadFactories(AbstractHttpConfigurer.class, getClass().getClassLoader()))
-				.thenReturn(Arrays.asList(configurer));
+		this.springFactoriesLoader
+			.when(() -> SpringFactoriesLoader.loadFactories(AbstractHttpConfigurer.class, getClass().getClassLoader()))
+			.thenReturn(Arrays.asList(configurer));
 		this.spring.register(DefaultWithFilterChainConfig.class).autowire();
 		assertThat(configurer.init).isTrue();
 		assertThat(configurer.configure).isTrue();
+	}
+
+	@Test
+	public void getWhenCustomContentNegotiationStrategyThenUses() throws Exception {
+		this.spring.register(CustomContentNegotiationStrategyConfig.class).autowire();
+		this.mockMvc.perform(get("/"));
+		verify(CustomContentNegotiationStrategyConfig.CNS, atLeastOnce())
+			.resolveMediaTypes(any(NativeWebRequest.class));
+	}
+
+	// gh-13084
+	@Test
+	public void configureWhenNoAuthenticationManagerAndObservationRegistryNotNoOpThenConfigure() throws Exception {
+		this.spring.register(ObservationConfig.class, NoAuthenticationManagerConfig.class).autowire();
+		this.mockMvc.perform(get("/"));
+	}
+
+	// gh-13203
+	@Test
+	public void disableConfigurerWhenAppliedByAnotherConfigurerThenNotApplied() {
+		this.spring.register(ApplyCustomDslConfig.class).autowire();
+		SecurityFilterChain filterChain = this.spring.getContext().getBean(SecurityFilterChain.class);
+		List<Filter> filters = filterChain.getFilters();
+		assertThat(filters).doesNotHaveAnyElementsOfTypes(DefaultLoginPageGeneratingFilter.class,
+				DefaultLogoutPageGeneratingFilter.class);
+	}
+
+	@Test
+	public void configureWhenCorsConfigurationSourceThenApplyCors() throws Exception {
+		this.spring.register(CorsConfigurationSourceConfig.class, DefaultWithFilterChainConfig.class).autowire();
+		SecurityFilterChain filterChain = this.spring.getContext().getBean(SecurityFilterChain.class);
+		CorsFilter corsFilter = (CorsFilter) filterChain.getFilters()
+			.stream()
+			.filter((f) -> f instanceof CorsFilter)
+			.findFirst()
+			.get();
+		Object configSource = ReflectionTestUtils.getField(corsFilter, "configSource");
+		assertThat(configSource).isInstanceOf(UrlBasedCorsConfigurationSource.class);
+	}
+
+	// gh-15378
+	@Test
+	public void configureWhenNoUrlBasedCorsConfigThenNoCorsAppliedAndVaryHeaderNotPresent() throws Exception {
+		this.spring.register(NonUrlBasedCorsConfig.class, DefaultWithFilterChainConfig.class).autowire();
+		SecurityFilterChain filterChain = this.spring.getContext().getBean(SecurityFilterChain.class);
+		assertThat(filterChain.getFilters()).noneMatch((filter) -> filter instanceof CorsFilter);
+
+		this.mockMvc.perform(get("/")).andExpect(header().doesNotExist("Vary"));
+	}
+
+	@Test
+	public void configureWhenAddingCustomDslUsingWithThenApplied() throws Exception {
+		this.spring.register(WithCustomDslConfig.class, UserDetailsConfig.class).autowire();
+		SecurityFilterChain filterChain = this.spring.getContext().getBean(SecurityFilterChain.class);
+		List<Filter> filters = filterChain.getFilters();
+		assertThat(filters).hasAtLeastOneElementOfType(UsernamePasswordAuthenticationFilter.class);
+		this.mockMvc.perform(formLogin()).andExpectAll(redirectedUrl("/"), authenticated());
+	}
+
+	@Test
+	public void configureWhenCustomDslAddedFromFactoriesAndDisablingUsingWithThenNotApplied() throws Exception {
+		this.springFactoriesLoader
+			.when(() -> SpringFactoriesLoader.loadFactories(AbstractHttpConfigurer.class, getClass().getClassLoader()))
+			.thenReturn(List.of(new WithCustomDsl()));
+		this.spring.register(WithCustomDslDisabledConfig.class, UserDetailsConfig.class).autowire();
+		SecurityFilterChain filterChain = this.spring.getContext().getBean(SecurityFilterChain.class);
+		List<Filter> filters = filterChain.getFilters();
+		assertThat(filters).doesNotHaveAnyElementsOfTypes(UsernamePasswordAuthenticationFilter.class);
+		this.mockMvc.perform(formLogin()).andExpectAll(status().isNotFound(), unauthenticated());
+	}
+
+	@Test
+	void loginWhenCompromisePasswordCheckerConfiguredAndPasswordCompromisedThenUnauthorized() throws Exception {
+		this.spring
+			.register(SecurityEnabledConfig.class, UserDetailsConfig.class, CompromisedPasswordCheckerConfig.class)
+			.autowire();
+		this.mockMvc.perform(formLogin().password("password"))
+			.andExpectAll(status().isFound(), redirectedUrl("/login?error"), unauthenticated());
+	}
+
+	@Test
+	void loginWhenCompromisedPasswordAndRedirectIfPasswordExceptionThenRedirectedToResetPassword() throws Exception {
+		this.spring
+			.register(SecurityEnabledRedirectIfPasswordExceptionConfig.class, UserDetailsConfig.class,
+					CompromisedPasswordCheckerConfig.class)
+			.autowire();
+		this.mockMvc.perform(formLogin().password("password"))
+			.andExpectAll(status().isFound(), redirectedUrl("/reset-password"), unauthenticated());
+	}
+
+	@Test
+	void loginWhenCompromisePasswordCheckerConfiguredAndPasswordNotCompromisedThenSuccess() throws Exception {
+		this.spring
+			.register(SecurityEnabledConfig.class, UserDetailsConfig.class, CompromisedPasswordCheckerConfig.class)
+			.autowire();
+		UserDetailsManager userDetailsManager = this.spring.getContext().getBean(UserDetailsManager.class);
+		UserDetails notCompromisedPwUser = User.withDefaultPasswordEncoder()
+			.username("user2")
+			.password("password2")
+			.roles("USER")
+			.build();
+		userDetailsManager.createUser(notCompromisedPwUser);
+		this.mockMvc.perform(formLogin().user("user2").password("password2"))
+			.andExpectAll(status().isFound(), redirectedUrl("/"), authenticated());
 	}
 
 	@RestController
@@ -373,7 +503,7 @@ public class HttpSecurityConfigurationTests {
 	static class UserDetailsConfig {
 
 		@Bean
-		UserDetailsService userDetailsService() {
+		InMemoryUserDetailsManager userDetailsService() {
 			// @formatter:off
 			UserDetails user = User.withDefaultPasswordEncoder()
 					.username("user")
@@ -496,6 +626,128 @@ public class HttpSecurityConfigurationTests {
 
 	}
 
+	@Configuration
+	@EnableWebSecurity
+	static class CustomContentNegotiationStrategyConfig {
+
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+			// @formatter:off
+			http
+					.authorizeHttpRequests((requests) -> requests
+							.anyRequest().authenticated()
+					);
+			// @formatter:on
+			return http.build();
+		}
+
+		static ContentNegotiationStrategy CNS = mock(ContentNegotiationStrategy.class);
+
+		@Bean
+		static ContentNegotiationStrategy cns() {
+			return CNS;
+		}
+
+	}
+
+	@Configuration
+	@EnableWebSecurity
+	static class NoAuthenticationManagerConfig {
+
+		@Bean
+		SecurityFilterChain apiSecurity(HttpSecurity http) throws Exception {
+			http.anonymous(AnonymousConfigurer::disable);
+			return http.build();
+		}
+
+		@Bean
+		AuthenticationProvider authenticationProvider1() {
+			return new TestingAuthenticationProvider();
+		}
+
+		@Bean
+		AuthenticationProvider authenticationProvider2() {
+			return new TestingAuthenticationProvider();
+		}
+
+	}
+
+	@Configuration
+	static class ObservationConfig {
+
+		@Bean
+		ObservationRegistry observationRegistry() {
+			return ObservationRegistry.create();
+		}
+
+	}
+
+	@Configuration
+	@EnableWebSecurity
+	static class ApplyCustomDslConfig {
+
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+			http.apply(CustomDsl.customDsl());
+			return http.build();
+		}
+
+	}
+
+	static class CustomDsl extends AbstractHttpConfigurer<CustomDsl, HttpSecurity> {
+
+		@Override
+		public void init(HttpSecurity http) throws Exception {
+			http.formLogin(FormLoginConfigurer::disable);
+		}
+
+		static CustomDsl customDsl() {
+			return new CustomDsl();
+		}
+
+	}
+
+	@Configuration
+	static class CorsConfigurationSourceConfig {
+
+		@Bean
+		CorsConfigurationSource corsConfigurationSource() {
+			UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+			CorsConfiguration corsConfiguration = new CorsConfiguration();
+			corsConfiguration.setAllowedOrigins(List.of("http://localhost:8080"));
+			source.registerCorsConfiguration("/**", corsConfiguration);
+			return source;
+		}
+
+	}
+
+	@Configuration
+	@EnableWebSecurity
+	static class NonUrlBasedCorsConfig {
+
+		@Bean
+		CorsConfigurationSource corsConfigurationSource() {
+			return new CustomCorsConfigurationSource();
+		}
+
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+			return http.build();
+		}
+
+	}
+
+	static class CustomCorsConfigurationSource implements CorsConfigurationSource {
+
+		@Override
+		public CorsConfiguration getCorsConfiguration(HttpServletRequest request) {
+			CorsConfiguration configuration = new CorsConfiguration();
+			configuration.setAllowedOrigins(List.of("http://localhost:8080"));
+			return configuration;
+		}
+
+	}
+
 	static class DefaultConfigurer extends AbstractHttpConfigurer<DefaultConfigurer, HttpSecurity> {
 
 		boolean init;
@@ -510,6 +762,95 @@ public class HttpSecurityConfigurationTests {
 		@Override
 		public void configure(HttpSecurity builder) {
 			this.configure = true;
+		}
+
+	}
+
+	@Configuration
+	@EnableWebSecurity
+	static class WithCustomDslConfig {
+
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+			// @formatter:off
+			http
+					.with(new WithCustomDsl(), Customizer.withDefaults())
+					.httpBasic(Customizer.withDefaults());
+			// @formatter:on
+			return http.build();
+		}
+
+	}
+
+	@Configuration
+	@EnableWebSecurity
+	static class WithCustomDslDisabledConfig {
+
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+			// @formatter:off
+			http
+					.with(new WithCustomDsl(), (dsl) -> dsl.disable())
+					.httpBasic(Customizer.withDefaults());
+			// @formatter:on
+			return http.build();
+		}
+
+	}
+
+	static class WithCustomDsl extends AbstractHttpConfigurer<WithCustomDsl, HttpSecurity> {
+
+		@Override
+		public void init(HttpSecurity builder) throws Exception {
+			builder.formLogin(Customizer.withDefaults());
+		}
+
+	}
+
+	@Configuration(proxyBeanMethods = false)
+	static class CompromisedPasswordCheckerConfig {
+
+		@Bean
+		TestCompromisedPasswordChecker compromisedPasswordChecker() {
+			return new TestCompromisedPasswordChecker();
+		}
+
+	}
+
+	@Configuration(proxyBeanMethods = false)
+	@EnableWebSecurity
+	static class SecurityEnabledRedirectIfPasswordExceptionConfig {
+
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+			// @formatter:off
+			return http
+					.authorizeHttpRequests((authorize) -> authorize
+							.anyRequest().authenticated()
+					)
+					.formLogin((form) -> form
+							.failureHandler((request, response, exception) -> {
+								if (exception instanceof CompromisedPasswordException) {
+									response.sendRedirect("/reset-password");
+									return;
+								}
+								response.sendRedirect("/login?error");
+							})
+					)
+					.build();
+			// @formatter:on
+		}
+
+	}
+
+	private static class TestCompromisedPasswordChecker implements CompromisedPasswordChecker {
+
+		@Override
+		public CompromisedPasswordDecision check(String password) {
+			if ("password".equals(password)) {
+				return new CompromisedPasswordDecision(true);
+			}
+			return new CompromisedPasswordDecision(false);
 		}
 
 	}

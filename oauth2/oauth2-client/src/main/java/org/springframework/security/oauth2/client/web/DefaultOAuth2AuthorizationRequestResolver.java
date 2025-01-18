@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2025 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -76,7 +76,7 @@ public final class DefaultOAuth2AuthorizationRequestResolver implements OAuth2Au
 			Base64.getUrlEncoder().withoutPadding(), 96);
 
 	private static final Consumer<OAuth2AuthorizationRequest.Builder> DEFAULT_PKCE_APPLIER = OAuth2AuthorizationRequestCustomizers
-			.withPkce();
+		.withPkce();
 
 	private final ClientRegistrationRepository clientRegistrationRepository;
 
@@ -149,7 +149,7 @@ public final class DefaultOAuth2AuthorizationRequestResolver implements OAuth2Au
 		}
 		ClientRegistration clientRegistration = this.clientRegistrationRepository.findByRegistrationId(registrationId);
 		if (clientRegistration == null) {
-			throw new IllegalArgumentException("Invalid Client Registration with Id: " + registrationId);
+			throw new InvalidClientRegistrationIdException("Invalid Client Registration with Id: " + registrationId);
 		}
 		OAuth2AuthorizationRequest.Builder builder = getBuilder(clientRegistration);
 
@@ -183,7 +183,8 @@ public final class DefaultOAuth2AuthorizationRequestResolver implements OAuth2Au
 				// value.
 				applyNonce(builder);
 			}
-			if (ClientAuthenticationMethod.NONE.equals(clientRegistration.getClientAuthenticationMethod())) {
+			if (ClientAuthenticationMethod.NONE.equals(clientRegistration.getClientAuthenticationMethod())
+					|| clientRegistration.getClientSettings().isRequireProofKey()) {
 				DEFAULT_PKCE_APPLIER.accept(builder);
 			}
 			return builder;
@@ -195,8 +196,9 @@ public final class DefaultOAuth2AuthorizationRequestResolver implements OAuth2Au
 
 	private String resolveRegistrationId(HttpServletRequest request) {
 		if (this.authorizationRequestMatcher.matches(request)) {
-			return this.authorizationRequestMatcher.matcher(request).getVariables()
-					.get(REGISTRATION_ID_URI_VARIABLE_NAME);
+			return this.authorizationRequestMatcher.matcher(request)
+				.getVariables()
+				.get(REGISTRATION_ID_URI_VARIABLE_NAME);
 		}
 		return null;
 	}
@@ -245,8 +247,9 @@ public final class DefaultOAuth2AuthorizationRequestResolver implements OAuth2Au
 		uriVariables.put("basePath", (path != null) ? path : "");
 		uriVariables.put("baseUrl", uriComponents.toUriString());
 		uriVariables.put("action", (action != null) ? action : "");
-		return UriComponentsBuilder.fromUriString(clientRegistration.getRedirectUri()).buildAndExpand(uriVariables)
-				.toUriString();
+		return UriComponentsBuilder.fromUriString(clientRegistration.getRedirectUri())
+			.buildAndExpand(uriVariables)
+			.toUriString();
 	}
 
 	/**

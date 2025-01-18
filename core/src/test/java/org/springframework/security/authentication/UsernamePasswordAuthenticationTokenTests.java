@@ -35,7 +35,7 @@ public class UsernamePasswordAuthenticationTokenTests {
 	public void authenticatedPropertyContractIsSatisfied() {
 		UsernamePasswordAuthenticationToken grantedToken = UsernamePasswordAuthenticationToken.authenticated("Test",
 				"Password", AuthorityUtils.NO_AUTHORITIES);
-		// check default given we passed some GrantedAuthorty[]s (well, we passed empty
+		// check default given we passed some GrantedAuthority[]s (well, we passed empty
 		// list)
 		assertThat(grantedToken.isAuthenticated()).isTrue();
 		// check explicit set to untrusted (we can safely go from trusted to untrusted,
@@ -43,9 +43,9 @@ public class UsernamePasswordAuthenticationTokenTests {
 		grantedToken.setAuthenticated(false);
 		assertThat(!grantedToken.isAuthenticated()).isTrue();
 		// Now let's create a UsernamePasswordAuthenticationToken without any
-		// GrantedAuthorty[]s (different constructor)
+		// GrantedAuthority[]s (different constructor)
 		UsernamePasswordAuthenticationToken noneGrantedToken = UsernamePasswordAuthenticationToken
-				.unauthenticated("Test", "Password");
+			.unauthenticated("Test", "Password");
 		assertThat(!noneGrantedToken.isAuthenticated()).isTrue();
 		// check we're allowed to still set it to untrusted
 		noneGrantedToken.setAuthenticated(false);
@@ -68,7 +68,7 @@ public class UsernamePasswordAuthenticationTokenTests {
 	public void testNoArgConstructorDoesntExist() throws Exception {
 		Class<?> clazz = UsernamePasswordAuthenticationToken.class;
 		assertThatExceptionOfType(NoSuchMethodException.class)
-				.isThrownBy(() -> clazz.getDeclaredConstructor((Class[]) null));
+			.isThrownBy(() -> clazz.getDeclaredConstructor((Class[]) null));
 	}
 
 	@Test

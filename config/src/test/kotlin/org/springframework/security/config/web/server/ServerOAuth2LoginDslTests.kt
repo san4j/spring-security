@@ -34,7 +34,7 @@ import org.springframework.security.oauth2.client.registration.ReactiveClientReg
 import org.springframework.security.oauth2.client.web.server.ServerAuthorizationRequestRepository
 import org.springframework.security.oauth2.client.web.server.WebSessionOAuth2ServerAuthorizationRequestRepository
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest
-import org.springframework.security.oauth2.server.resource.web.server.ServerBearerTokenAuthenticationConverter
+import org.springframework.security.oauth2.server.resource.web.server.authentication.ServerBearerTokenAuthenticationConverter
 import org.springframework.security.web.server.DefaultServerRedirectStrategy
 import org.springframework.security.web.server.SecurityWebFilterChain
 import org.springframework.security.web.server.ServerRedirectStrategy
@@ -109,6 +109,30 @@ class ServerOAuth2LoginDslTests {
         open fun springWebFilterChain(http: ServerHttpSecurity): SecurityWebFilterChain {
             return http {
                 oauth2Login { }
+            }
+        }
+    }
+
+    @Test
+    fun `login page when OAuth2 login configured with login page then default login page does not exist`() {
+        this.spring.register(OAuth2LoginConfigWithLoginPage::class.java, ClientConfig::class.java).autowire()
+
+        this.client.get()
+                .uri("/login")
+                .exchange()
+                .expectStatus().isNotFound
+    }
+
+    @Configuration
+    @EnableWebFluxSecurity
+    @EnableWebFlux
+    open class OAuth2LoginConfigWithLoginPage {
+        @Bean
+        open fun springWebFilterChain(http: ServerHttpSecurity): SecurityWebFilterChain {
+            return http {
+                oauth2Login {
+                    loginPage = "/login"
+                }
             }
         }
     }
@@ -233,7 +257,8 @@ class ServerOAuth2LoginDslTests {
     open class AuthenticationConverterConfig {
 
         companion object {
-            val AUTHENTICATION_CONVERTER: ServerAuthenticationConverter = ServerBearerTokenAuthenticationConverter()
+            val AUTHENTICATION_CONVERTER: ServerAuthenticationConverter =
+				ServerBearerTokenAuthenticationConverter()
         }
 
         @Bean

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,16 +22,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.TestingAuthenticationToken;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.test.SpringTestContext;
 import org.springframework.security.config.test.SpringTestContextExtension;
-import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.core.userdetails.PasswordEncodedUser;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.debug.DebugFilter;
 import org.springframework.test.web.servlet.MockMvc;
@@ -40,6 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -56,32 +52,29 @@ public class EnableWebSecurityTests {
 	private MockMvc mockMvc;
 
 	@Test
-	public void configureWhenOverrideAuthenticationManagerBeanThenAuthenticationManagerBeanRegistered() {
-		this.spring.register(SecurityConfig.class).autowire();
-		AuthenticationManager authenticationManager = this.spring.getContext().getBean(AuthenticationManager.class);
-		Authentication authentication = authenticationManager
-				.authenticate(UsernamePasswordAuthenticationToken.unauthenticated("user", "password"));
-		assertThat(authentication.isAuthenticated()).isTrue();
-	}
-
-	@Test
 	public void loadConfigWhenChildConfigExtendsSecurityConfigThenSecurityConfigInherited() {
 		this.spring.register(ChildSecurityConfig.class).autowire();
 		this.spring.getContext().getBean("springSecurityFilterChain", DebugFilter.class);
+	}
+
+	// gh-14370
+	@Test
+	public void loadConfigWhenEnableWebMvcDebugConfigThenContextIsBuilt() {
+		assertThatNoException().isThrownBy(() -> this.spring.register(EnableWebMvcDebugConfig.class).autowire());
 	}
 
 	@Test
 	public void configureWhenEnableWebMvcThenAuthenticationPrincipalResolvable() throws Exception {
 		this.spring.register(AuthenticationPrincipalConfig.class).autowire();
 		this.mockMvc.perform(get("/").with(authentication(new TestingAuthenticationToken("user1", "password"))))
-				.andExpect(content().string("user1"));
+			.andExpect(content().string("user1"));
 	}
 
 	@Test
 	public void securityFilterChainWhenEnableWebMvcThenAuthenticationPrincipalResolvable() throws Exception {
 		this.spring.register(SecurityFilterChainAuthenticationPrincipalConfig.class).autowire();
 		this.mockMvc.perform(get("/").with(authentication(new TestingAuthenticationToken("user1", "password"))))
-				.andExpect(content().string("user1"));
+			.andExpect(content().string("user1"));
 	}
 
 	@Test
@@ -101,34 +94,9 @@ public class EnableWebSecurityTests {
 	}
 
 	@Configuration
-	@EnableWebSecurity
-	static class SecurityConfig extends WebSecurityConfigurerAdapter {
-
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
-			// @formatter:off
-			auth
-				.inMemoryAuthentication()
-					.withUser(PasswordEncodedUser.user());
-			// @formatter:on
-		}
-
-		@Bean
-		@Override
-		public AuthenticationManager authenticationManagerBean() throws Exception {
-			return super.authenticationManagerBean();
-		}
-
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
-			// @formatter:off
-			http
-				.authorizeRequests()
-					.antMatchers("/*").hasRole("USER")
-					.and()
-				.formLogin();
-			// @formatter:on
-		}
+	@EnableWebMvc
+	@EnableWebSecurity(debug = true)
+	static class EnableWebMvcDebugConfig {
 
 	}
 
@@ -139,17 +107,18 @@ public class EnableWebSecurityTests {
 
 	@Configuration
 	@EnableWebSecurity(debug = true)
-	static class DebugSecurityConfig extends WebSecurityConfigurerAdapter {
+	static class DebugSecurityConfig {
 
 	}
 
 	@Configuration
 	@EnableWebSecurity
 	@EnableWebMvc
-	static class AuthenticationPrincipalConfig extends WebSecurityConfigurerAdapter {
+	static class AuthenticationPrincipalConfig {
 
-		@Override
-		protected void configure(HttpSecurity http) {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+			return http.build();
 		}
 
 		@RestController
@@ -188,7 +157,7 @@ public class EnableWebSecurityTests {
 
 	@Configuration
 	@EnableWebSecurity
-	static class BeanProxyEnabledByDefaultConfig extends WebSecurityConfigurerAdapter {
+	static class BeanProxyEnabledByDefaultConfig {
 
 		@Bean
 		Child child() {
@@ -204,7 +173,7 @@ public class EnableWebSecurityTests {
 
 	@Configuration(proxyBeanMethods = false)
 	@EnableWebSecurity
-	static class BeanProxyDisabledConfig extends WebSecurityConfigurerAdapter {
+	static class BeanProxyDisabledConfig {
 
 		@Bean
 		Child child() {

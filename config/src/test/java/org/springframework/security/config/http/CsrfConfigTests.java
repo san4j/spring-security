@@ -22,12 +22,12 @@ import java.util.List;
 import jakarta.servlet.Filter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.eclipse.jetty.http.HttpStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.access.AccessDeniedException;
@@ -41,6 +41,7 @@ import org.springframework.security.web.FilterChainProxy;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.security.web.csrf.CsrfTokenRepository;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.stereotype.Controller;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
@@ -284,7 +285,7 @@ public class CsrfConfigTests {
 	@Test
 	public void postWhenUsingCsrfAndCustomAccessDeniedHandlerThenTheHandlerIsAppropriatelyEngaged() throws Exception {
 		this.spring.configLocations(this.xml("WithAccessDeniedHandler"), this.xml("shared-access-denied-handler"))
-				.autowire();
+			.autowire();
 		// @formatter:off
 		this.mvc.perform(post("/ok"))
 				.andExpect(status().isIAmATeapot());
@@ -301,12 +302,48 @@ public class CsrfConfigTests {
 	}
 
 	@Test
+	public void postWhenUsingCsrfAndXorCsrfTokenRequestAttributeHandlerThenOk() throws Exception {
+		this.spring.configLocations(this.xml("WithXorCsrfTokenRequestAttributeHandler"), this.xml("shared-controllers"))
+			.autowire();
+		// @formatter:off
+		MvcResult mvcResult = this.mvc.perform(get("/ok"))
+				.andExpect(status().isOk())
+				.andReturn();
+		MockHttpSession session = (MockHttpSession) mvcResult.getRequest().getSession();
+		MockHttpServletRequestBuilder ok = post("/ok")
+				.with(csrf())
+				.session(session);
+		this.mvc.perform(ok).andExpect(status().isOk());
+		// @formatter:on
+	}
+
+	@Test
+	public void postWhenUsingCsrfAndXorCsrfTokenRequestAttributeHandlerWithRawTokenThenForbidden() throws Exception {
+		this.spring.configLocations(this.xml("WithXorCsrfTokenRequestAttributeHandler"), this.xml("shared-controllers"))
+			.autowire();
+		// @formatter:off
+		MvcResult mvcResult = this.mvc.perform(get("/csrf"))
+				.andExpect(status().isOk())
+				.andReturn();
+		MockHttpServletRequest request = mvcResult.getRequest();
+		MockHttpSession session = (MockHttpSession) request.getSession();
+		CsrfTokenRepository repository = WebTestUtils.getCsrfTokenRepository(request);
+		CsrfToken csrfToken = repository.loadToken(request);
+		MockHttpServletRequestBuilder ok = post("/ok")
+				.header(csrfToken.getHeaderName(), csrfToken.getToken())
+				.session(session);
+		this.mvc.perform(ok).andExpect(status().isForbidden());
+		// @formatter:on
+	}
+
+	@Test
 	public void postWhenHasCsrfTokenButSessionExpiresThenRequestIsCancelledAfterSuccessfulAuthentication()
 			throws Exception {
 		this.spring.configLocations(this.xml("CsrfEnabled")).autowire();
 		// simulates a request that has no authentication (e.g. session time-out)
 		MvcResult result = this.mvc.perform(post("/authenticated").with(csrf()))
-				.andExpect(redirectedUrl("http://localhost/login")).andReturn();
+			.andExpect(redirectedUrl("http://localhost/login"))
+			.andReturn();
 		MockHttpSession session = (MockHttpSession) result.getRequest().getSession();
 		// if the request cache is consulted, then it will redirect back to /some-url,
 		// which we don't want
@@ -326,8 +363,9 @@ public class CsrfConfigTests {
 			throws Exception {
 		this.spring.configLocations(this.xml("CsrfEnabled")).autowire();
 		// simulates a request that has no authentication (e.g. session time-out)
-		MvcResult result = this.mvc.perform(get("/authenticated")).andExpect(redirectedUrl("http://localhost/login"))
-				.andReturn();
+		MvcResult result = this.mvc.perform(get("/authenticated"))
+			.andExpect(redirectedUrl("http://localhost/login"))
+			.andReturn();
 		MockHttpSession session = (MockHttpSession) result.getRequest().getSession();
 		// if the request cache is consulted, then it will redirect back to /some-url,
 		// which we do want
@@ -474,7 +512,7 @@ public class CsrfConfigTests {
 			assertThat(first).isNotNull();
 			assertThat(second).isNotNull();
 			assertThat(first.getResponse().getContentAsString())
-					.isNotEqualTo(second.getResponse().getContentAsString());
+				.isNotEqualTo(second.getResponse().getContentAsString());
 		};
 	}
 
@@ -501,8 +539,9 @@ public class CsrfConfigTests {
 			return csrfInBody(token);
 		}
 
-		@RequestMapping(value = "/csrf", method = { RequestMethod.POST, RequestMethod.PUT, RequestMethod.PATCH,
-				RequestMethod.DELETE, RequestMethod.GET })
+		@RequestMapping(value = "/csrf",
+				method = { RequestMethod.POST, RequestMethod.PUT, RequestMethod.PATCH, RequestMethod.DELETE,
+						RequestMethod.GET })
 		@ResponseBody
 		String csrfInBody(CsrfToken token) {
 			return token.getToken();
@@ -527,7 +566,7 @@ public class CsrfConfigTests {
 		@Override
 		public void handle(HttpServletRequest request, HttpServletResponse response,
 				AccessDeniedException accessDeniedException) {
-			response.setStatus(HttpStatus.IM_A_TEAPOT_418);
+			response.setStatus(HttpStatus.I_AM_A_TEAPOT.value());
 		}
 
 	}
@@ -561,7 +600,7 @@ public class CsrfConfigTests {
 		@Override
 		public void match(MvcResult result) throws Exception {
 			MockHttpServletRequest request = result.getRequest();
-			CsrfToken token = WebTestUtils.getCsrfTokenRepository(request).loadToken(request);
+			CsrfToken token = (CsrfToken) request.getAttribute(CsrfToken.class.getName());
 			assertThat(token).isNotNull();
 			assertThat(token.getToken()).isEqualTo(this.token.apply(result));
 		}

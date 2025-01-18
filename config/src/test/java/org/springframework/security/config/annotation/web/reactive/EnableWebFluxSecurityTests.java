@@ -16,6 +16,10 @@
 
 package org.springframework.security.config.annotation.web.reactive;
 
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 import java.nio.charset.StandardCharsets;
 
 import org.junit.jupiter.api.Test;
@@ -28,6 +32,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.Ordered;
+import org.springframework.core.annotation.AliasFor;
 import org.springframework.core.annotation.Order;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DefaultDataBufferFactory;
@@ -305,8 +310,10 @@ public class EnableWebFluxSecurityTests {
 	@Test
 	// gh-8596
 	public void resolveAuthenticationPrincipalArgumentResolverFirstDoesNotCauseBeanCurrentlyInCreationException() {
-		this.spring.register(EnableWebFluxSecurityConfiguration.class, ReactiveAuthenticationTestConfiguration.class,
-				DelegatingWebFluxConfiguration.class).autowire();
+		this.spring
+			.register(EnableWebFluxSecurityConfiguration.class, ReactiveAuthenticationTestConfiguration.class,
+					DelegatingWebFluxConfiguration.class)
+			.autowire();
 	}
 
 	@Test
@@ -369,8 +376,10 @@ public class EnableWebFluxSecurityTests {
 		@Order(Ordered.HIGHEST_PRECEDENCE)
 		@Bean
 		SecurityWebFilterChain apiHttpSecurity(ServerHttpSecurity http) {
-			http.securityMatcher(new PathPatternParserServerWebExchangeMatcher("/api/**")).authorizeExchange()
-					.anyExchange().denyAll();
+			http.securityMatcher(new PathPatternParserServerWebExchangeMatcher("/api/**"))
+				.authorizeExchange()
+				.anyExchange()
+				.denyAll();
 			return http.build();
 		}
 
@@ -400,11 +409,28 @@ public class EnableWebFluxSecurityTests {
 
 		}
 
-		@RestController
-		static class AuthenticationPrincipalResolver {
+		@Target({ ElementType.PARAMETER })
+		@Retention(RetentionPolicy.RUNTIME)
+		@AuthenticationPrincipal
+		@interface Property {
 
+			@AliasFor(attribute = "expression", annotation = AuthenticationPrincipal.class)
+			String value() default "id";
+
+		}
+
+		interface UsernameResolver {
+
+			String username(@Property("@principalBean.username(#this)") String username);
+
+		}
+
+		@RestController
+		static class AuthenticationPrincipalResolver implements UsernameResolver {
+
+			@Override
 			@GetMapping("/spel")
-			String username(@AuthenticationPrincipal(expression = "@principalBean.username(#this)") String username) {
+			public String username(String username) {
 				return username;
 			}
 

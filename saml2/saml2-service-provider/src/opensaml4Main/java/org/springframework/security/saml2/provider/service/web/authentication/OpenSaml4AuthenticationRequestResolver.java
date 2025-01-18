@@ -26,6 +26,7 @@ import org.opensaml.saml.saml2.core.AuthnRequest;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.saml2.provider.service.authentication.AbstractSaml2AuthenticationRequest;
 import org.springframework.security.saml2.provider.service.registration.RelyingPartyRegistration;
+import org.springframework.security.saml2.provider.service.registration.RelyingPartyRegistrationRepository;
 import org.springframework.security.saml2.provider.service.web.RelyingPartyRegistrationResolver;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.util.Assert;
@@ -39,26 +40,33 @@ import org.springframework.util.Assert;
  */
 public final class OpenSaml4AuthenticationRequestResolver implements Saml2AuthenticationRequestResolver {
 
-	private final OpenSamlAuthenticationRequestResolver authnRequestResolver;
+	private final BaseOpenSamlAuthenticationRequestResolver delegate;
 
-	private Consumer<AuthnRequestContext> contextConsumer = (parameters) -> {
-	};
-
-	private Clock clock = Clock.systemUTC();
+	/**
+	 * Construct an {@link OpenSaml4AuthenticationRequestResolver}
+	 * @param registrations a repository for relying and asserting party configuration
+	 * @since 6.1
+	 */
+	public OpenSaml4AuthenticationRequestResolver(RelyingPartyRegistrationRepository registrations) {
+		this.delegate = new BaseOpenSamlAuthenticationRequestResolver((request, id) -> {
+			if (id == null) {
+				return null;
+			}
+			return registrations.findByRegistrationId(id);
+		}, new OpenSaml4Template());
+	}
 
 	/**
 	 * Construct a {@link OpenSaml4AuthenticationRequestResolver}
 	 */
 	public OpenSaml4AuthenticationRequestResolver(RelyingPartyRegistrationResolver relyingPartyRegistrationResolver) {
-		this.authnRequestResolver = new OpenSamlAuthenticationRequestResolver(relyingPartyRegistrationResolver);
+		this.delegate = new BaseOpenSamlAuthenticationRequestResolver(relyingPartyRegistrationResolver,
+				new OpenSaml4Template());
 	}
 
 	@Override
 	public <T extends AbstractSaml2AuthenticationRequest> T resolve(HttpServletRequest request) {
-		return this.authnRequestResolver.resolve(request, (registration, authnRequest) -> {
-			authnRequest.setIssueInstant(Instant.now(this.clock));
-			this.contextConsumer.accept(new AuthnRequestContext(request, registration, authnRequest));
-		});
+		return this.delegate.resolve(request);
 	}
 
 	/**
@@ -67,12 +75,14 @@ public final class OpenSaml4AuthenticationRequestResolver implements Saml2Authen
 	 */
 	public void setAuthnRequestCustomizer(Consumer<AuthnRequestContext> contextConsumer) {
 		Assert.notNull(contextConsumer, "contextConsumer cannot be null");
-		this.contextConsumer = contextConsumer;
+		this.delegate.setParametersConsumer(
+				(parameters) -> contextConsumer.accept(new AuthnRequestContext(parameters.getRequest(),
+						parameters.getRelyingPartyRegistration(), parameters.getAuthnRequest())));
 	}
 
 	/**
 	 * Set the {@link RequestMatcher} to use for setting the
-	 * {@link OpenSamlAuthenticationRequestResolver#setRequestMatcher(RequestMatcher)}
+	 * {@link BaseOpenSamlAuthenticationRequestResolver#setRequestMatcher(RequestMatcher)}
 	 * (RequestMatcher)}
 	 * @param requestMatcher the {@link RequestMatcher} to identify authentication
 	 * requests.
@@ -80,7 +90,7 @@ public final class OpenSaml4AuthenticationRequestResolver implements Saml2Authen
 	 */
 	public void setRequestMatcher(RequestMatcher requestMatcher) {
 		Assert.notNull(requestMatcher, "requestMatcher cannot be null");
-		this.authnRequestResolver.setRequestMatcher(requestMatcher);
+		this.delegate.setRequestMatcher(requestMatcher);
 	}
 
 	/**
@@ -89,7 +99,7 @@ public final class OpenSaml4AuthenticationRequestResolver implements Saml2Authen
 	 */
 	public void setClock(Clock clock) {
 		Assert.notNull(clock, "clock must not be null");
-		this.clock = clock;
+		this.delegate.setClock(clock);
 	}
 
 	/**
@@ -99,7 +109,7 @@ public final class OpenSaml4AuthenticationRequestResolver implements Saml2Authen
 	 */
 	public void setRelayStateResolver(Converter<HttpServletRequest, String> relayStateResolver) {
 		Assert.notNull(relayStateResolver, "relayStateResolver cannot be null");
-		this.authnRequestResolver.setRelayStateResolver(relayStateResolver);
+		this.delegate.setRelayStateResolver(relayStateResolver);
 	}
 
 	public static final class AuthnRequestContext {

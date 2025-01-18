@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,17 +28,17 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
-import org.springframework.security.config.annotation.ObjectPostProcessor;
+import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.config.annotation.SecurityContextChangedListenerConfig;
-import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.config.test.SpringTestContext;
 import org.springframework.security.config.test.SpringTestContextExtension;
 import org.springframework.security.core.context.SecurityContextChangedListener;
 import org.springframework.security.core.context.SecurityContextHolderStrategy;
 import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
@@ -46,6 +46,7 @@ import org.springframework.security.web.authentication.preauth.PreAuthenticatedA
 import org.springframework.security.web.authentication.preauth.x509.X509AuthenticationFilter;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
@@ -108,7 +109,7 @@ public class X509ConfigurerTests {
 		SecurityContextHolderStrategy strategy = this.spring.getContext().getBean(SecurityContextHolderStrategy.class);
 		verify(strategy, atLeastOnce()).getContext();
 		SecurityContextChangedListener listener = this.spring.getContext()
-				.getBean(SecurityContextChangedListener.class);
+			.getBean(SecurityContextChangedListener.class);
 		verify(listener).securityContextChanged(setAuthentication(PreAuthenticatedAuthenticationToken.class));
 	}
 
@@ -142,6 +143,18 @@ public class X509ConfigurerTests {
 		// @formatter:on
 	}
 
+	// gh-13008
+	@Test
+	public void x509WhenStatelessSessionManagementThenDoesNotCreateSession() throws Exception {
+		this.spring.register(StatelessSessionManagementConfig.class).autowire();
+		X509Certificate certificate = loadCert("rodatexampledotcom.cer");
+		// @formatter:off
+		this.mvc.perform(get("/").with(x509(certificate)))
+				.andExpect((result) -> assertThat(result.getRequest().getSession(false)).isNull())
+				.andExpect(authenticated().withUsername("rod"));
+		// @formatter:on
+	}
+
 	private <T extends Certificate> T loadCert(String location) {
 		try (InputStream is = new ClassPathResource(location).getInputStream()) {
 			CertificateFactory certFactory = CertificateFactory.getInstance("X.509");
@@ -154,15 +167,16 @@ public class X509ConfigurerTests {
 
 	@Configuration
 	@EnableWebSecurity
-	static class ObjectPostProcessorConfig extends WebSecurityConfigurerAdapter {
+	static class ObjectPostProcessorConfig {
 
 		static ObjectPostProcessor<Object> objectPostProcessor = spy(ReflectingObjectPostProcessor.class);
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.x509();
+			return http.build();
 			// @formatter:on
 		}
 
@@ -184,10 +198,10 @@ public class X509ConfigurerTests {
 
 	@Configuration
 	@EnableWebSecurity
-	static class DuplicateDoesNotOverrideConfig extends WebSecurityConfigurerAdapter {
+	static class DuplicateDoesNotOverrideConfig {
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.x509()
@@ -195,48 +209,52 @@ public class X509ConfigurerTests {
 					.and()
 				.x509();
 			// @formatter:on
+			return http.build();
 		}
 
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
-			// @formatter:off
-			auth
-				.inMemoryAuthentication()
-					.withUser("rod").password("password").roles("USER", "ADMIN");
-			// @formatter:on
+		@Bean
+		UserDetailsService userDetailsService() {
+			UserDetails user = User.withDefaultPasswordEncoder()
+				.username("rod")
+				.password("password")
+				.roles("USER", "ADMIN")
+				.build();
+			return new InMemoryUserDetailsManager(user);
 		}
 
 	}
 
 	@Configuration
 	@EnableWebSecurity
-	static class DefaultsInLambdaConfig extends WebSecurityConfigurerAdapter {
+	static class DefaultsInLambdaConfig {
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.x509(withDefaults());
 			// @formatter:on
+			return http.build();
 		}
 
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
-			// @formatter:off
-			auth
-				.inMemoryAuthentication()
-					.withUser("rod").password("password").roles("USER", "ADMIN");
-			// @formatter:on
+		@Bean
+		UserDetailsService userDetailsService() {
+			UserDetails user = User.withDefaultPasswordEncoder()
+				.username("rod")
+				.password("password")
+				.roles("USER", "ADMIN")
+				.build();
+			return new InMemoryUserDetailsManager(user);
 		}
 
 	}
 
 	@Configuration
 	@EnableWebSecurity
-	static class SubjectPrincipalRegexInLambdaConfig extends WebSecurityConfigurerAdapter {
+	static class SubjectPrincipalRegexInLambdaConfig {
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.x509((x509) ->
@@ -244,15 +262,17 @@ public class X509ConfigurerTests {
 						.subjectPrincipalRegex("CN=(.*?)@example.com(?:,|$)")
 				);
 			// @formatter:on
+			return http.build();
 		}
 
-		@Override
-		protected void configure(AuthenticationManagerBuilder auth) throws Exception {
-			// @formatter:off
-			auth
-				.inMemoryAuthentication()
-					.withUser("rod").password("password").roles("USER", "ADMIN");
-			// @formatter:on
+		@Bean
+		UserDetailsService userDetailsService() {
+			UserDetails user = User.withDefaultPasswordEncoder()
+				.username("rod")
+				.password("password")
+				.roles("USER", "ADMIN")
+				.build();
+			return new InMemoryUserDetailsManager(user);
 		}
 
 	}
@@ -310,6 +330,32 @@ public class X509ConfigurerTests {
 		UserDetailsService userDetailsService() {
 			// @formatter:off
 			return mock(UserDetailsService.class);
+		}
+
+	}
+
+	@Configuration
+	@EnableWebSecurity
+	static class StatelessSessionManagementConfig {
+
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+			// @formatter:off
+			http
+				.sessionManagement((session) -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+				.x509((x509) -> x509.subjectPrincipalRegex("CN=(.*?)@example.com(?:,|$)"));
+			// @formatter:on
+			return http.build();
+		}
+
+		@Bean
+		UserDetailsService userDetailsService() {
+			UserDetails user = User.withDefaultPasswordEncoder()
+				.username("rod")
+				.password("password")
+				.roles("USER", "ADMIN")
+				.build();
+			return new InMemoryUserDetailsManager(user);
 		}
 
 	}

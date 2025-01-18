@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,7 +36,9 @@ import org.springframework.util.MultiValueMap;
  * @see AbstractOAuth2AuthorizationGrantRequestEntityConverter
  * @see OAuth2AuthorizationCodeGrantRequest
  * @see RequestEntity
+ * @deprecated Use {@link DefaultOAuth2TokenRequestParametersConverter} instead
  */
+@Deprecated(since = "6.4")
 public class OAuth2AuthorizationCodeGrantRequestEntityConverter
 		extends AbstractOAuth2AuthorizationGrantRequestEntityConverter<OAuth2AuthorizationCodeGrantRequest> {
 
@@ -50,12 +52,12 @@ public class OAuth2AuthorizationCodeGrantRequestEntityConverter
 		parameters.add(OAuth2ParameterNames.CODE, authorizationExchange.getAuthorizationResponse().getCode());
 		String redirectUri = authorizationExchange.getAuthorizationRequest().getRedirectUri();
 		String codeVerifier = authorizationExchange.getAuthorizationRequest()
-				.getAttribute(PkceParameterNames.CODE_VERIFIER);
+			.getAttribute(PkceParameterNames.CODE_VERIFIER);
 		if (redirectUri != null) {
 			parameters.add(OAuth2ParameterNames.REDIRECT_URI, redirectUri);
 		}
 		if (!ClientAuthenticationMethod.CLIENT_SECRET_BASIC
-				.equals(clientRegistration.getClientAuthenticationMethod())) {
+			.equals(clientRegistration.getClientAuthenticationMethod())) {
 			parameters.add(OAuth2ParameterNames.CLIENT_ID, clientRegistration.getClientId());
 		}
 		if (ClientAuthenticationMethod.CLIENT_SECRET_POST.equals(clientRegistration.getClientAuthenticationMethod())) {

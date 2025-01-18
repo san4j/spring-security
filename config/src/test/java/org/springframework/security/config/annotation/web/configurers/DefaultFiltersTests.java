@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2019 the original author or authors.
+ * Copyright 2002-2022 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,17 +25,15 @@ import jakarta.servlet.ServletException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
-import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.builders.WebSecurity;
+import org.springframework.security.config.annotation.web.builders.TestHttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer;
 import org.springframework.security.config.test.SpringTestContext;
 import org.springframework.security.config.test.SpringTestContextExtension;
 import org.springframework.security.core.userdetails.PasswordEncodedUser;
@@ -53,13 +51,16 @@ import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.context.request.async.WebAsyncManagerIntegrationFilter;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.security.web.csrf.CsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfTokenRequestHandler;
 import org.springframework.security.web.csrf.DefaultCsrfToken;
 import org.springframework.security.web.csrf.HttpSessionCsrfTokenRepository;
+import org.springframework.security.web.csrf.XorCsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.header.HeaderWriterFilter;
 import org.springframework.security.web.savedrequest.RequestCacheAwareFilter;
 import org.springframework.security.web.servletapi.SecurityContextHolderAwareRequestFilter;
-import org.springframework.security.web.session.SessionManagementFilter;
 import org.springframework.security.web.util.matcher.AnyRequestMatcher;
+import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -81,40 +82,45 @@ public class DefaultFiltersTests {
 	@Test
 	public void nullWebInvocationPrivilegeEvaluator() {
 		this.spring.register(NullWebInvocationPrivilegeEvaluatorConfig.class, UserDetailsServiceConfig.class);
-		List<SecurityFilterChain> filterChains = this.spring.getContext().getBean(FilterChainProxy.class)
-				.getFilterChains();
-		assertThat(filterChains.size()).isEqualTo(1);
+		List<SecurityFilterChain> filterChains = this.spring.getContext()
+			.getBean(FilterChainProxy.class)
+			.getFilterChains();
+		assertThat(filterChains).hasSize(1);
 		DefaultSecurityFilterChain filterChain = (DefaultSecurityFilterChain) filterChains.get(0);
 		assertThat(filterChain.getRequestMatcher()).isInstanceOf(AnyRequestMatcher.class);
-		assertThat(filterChain.getFilters().size()).isEqualTo(1);
-		long filter = filterChain.getFilters().stream()
-				.filter((it) -> it instanceof UsernamePasswordAuthenticationFilter).count();
+		assertThat(filterChain.getFilters()).hasSize(1);
+		long filter = filterChain.getFilters()
+			.stream()
+			.filter((it) -> it instanceof UsernamePasswordAuthenticationFilter)
+			.count();
 		assertThat(filter).isEqualTo(1);
 	}
 
 	@Test
 	public void filterChainProxyBuilderIgnoringResources() {
 		this.spring.register(FilterChainProxyBuilderIgnoringConfig.class, UserDetailsServiceConfig.class);
-		List<SecurityFilterChain> filterChains = this.spring.getContext().getBean(FilterChainProxy.class)
-				.getFilterChains();
-		assertThat(filterChains.size()).isEqualTo(2);
+		List<SecurityFilterChain> filterChains = this.spring.getContext()
+			.getBean(FilterChainProxy.class)
+			.getFilterChains();
+		assertThat(filterChains).hasSize(2);
 		DefaultSecurityFilterChain firstFilter = (DefaultSecurityFilterChain) filterChains.get(0);
 		DefaultSecurityFilterChain secondFilter = (DefaultSecurityFilterChain) filterChains.get(1);
 		assertThat(firstFilter.getFilters().isEmpty()).isEqualTo(true);
 		assertThat(secondFilter.getRequestMatcher()).isInstanceOf(AnyRequestMatcher.class);
-		List<? extends Class<? extends Filter>> classes = secondFilter.getFilters().stream().map(Filter::getClass)
-				.collect(Collectors.toList());
-		assertThat(classes.contains(WebAsyncManagerIntegrationFilter.class)).isTrue();
-		assertThat(classes.contains(SecurityContextHolderFilter.class)).isTrue();
-		assertThat(classes.contains(HeaderWriterFilter.class)).isTrue();
-		assertThat(classes.contains(LogoutFilter.class)).isTrue();
-		assertThat(classes.contains(CsrfFilter.class)).isTrue();
-		assertThat(classes.contains(RequestCacheAwareFilter.class)).isTrue();
-		assertThat(classes.contains(SecurityContextHolderAwareRequestFilter.class)).isTrue();
-		assertThat(classes.contains(AnonymousAuthenticationFilter.class)).isTrue();
-		assertThat(classes.contains(SessionManagementFilter.class)).isTrue();
-		assertThat(classes.contains(ExceptionTranslationFilter.class)).isTrue();
-		assertThat(classes.contains(FilterSecurityInterceptor.class)).isTrue();
+		List<Class<? extends Filter>> classes = secondFilter.getFilters()
+			.stream()
+			.map(Filter::getClass)
+			.collect(Collectors.toList());
+		assertThat(classes).contains(WebAsyncManagerIntegrationFilter.class);
+		assertThat(classes).contains(SecurityContextHolderFilter.class);
+		assertThat(classes).contains(HeaderWriterFilter.class);
+		assertThat(classes).contains(LogoutFilter.class);
+		assertThat(classes).contains(CsrfFilter.class);
+		assertThat(classes).contains(RequestCacheAwareFilter.class);
+		assertThat(classes).contains(SecurityContextHolderAwareRequestFilter.class);
+		assertThat(classes).contains(AnonymousAuthenticationFilter.class);
+		assertThat(classes).contains(ExceptionTranslationFilter.class);
+		assertThat(classes).contains(FilterSecurityInterceptor.class);
 	}
 
 	@Test
@@ -124,10 +130,15 @@ public class DefaultFiltersTests {
 		MockHttpServletRequest request = new MockHttpServletRequest("POST", "");
 		request.setServletPath("/logout");
 		CsrfToken csrfToken = new DefaultCsrfToken("X-CSRF-TOKEN", "_csrf", "BaseSpringSpec_CSRFTOKEN");
-		new HttpSessionCsrfTokenRepository().saveToken(csrfToken, request, response);
-		request.setParameter(csrfToken.getParameterName(), csrfToken.getToken());
-		this.spring.getContext().getBean("springSecurityFilterChain", Filter.class).doFilter(request, response,
-				new MockFilterChain());
+		CsrfTokenRepository repository = new HttpSessionCsrfTokenRepository();
+		repository.saveToken(csrfToken, request, response);
+		CsrfTokenRequestHandler handler = new XorCsrfTokenRequestAttributeHandler();
+		handler.handle(request, response, () -> csrfToken);
+		CsrfToken token = (CsrfToken) request.getAttribute(CsrfToken.class.getName());
+		request.setParameter(token.getParameterName(), token.getToken());
+		this.spring.getContext()
+			.getBean("springSecurityFilterChain", Filter.class)
+			.doFilter(request, response, new MockFilterChain());
 		assertThat(response.getRedirectedUrl()).isEqualTo("/login?logout");
 	}
 
@@ -135,13 +146,9 @@ public class DefaultFiltersTests {
 	@EnableWebSecurity
 	static class FilterChainProxyBuilderMissingConfig {
 
-		@Autowired
-		void configureGlobal(AuthenticationManagerBuilder auth) throws Exception {
-			// @formatter:off
-			auth
-				.inMemoryAuthentication()
-					.withUser("user").password("password").roles("USER");
-			// @formatter:on
+		@Bean
+		UserDetailsService userDetailsService() {
+			return new InMemoryUserDetailsManager(PasswordEncodedUser.user());
 		}
 
 	}
@@ -158,38 +165,34 @@ public class DefaultFiltersTests {
 
 	@Configuration
 	@EnableWebSecurity
-	static class NullWebInvocationPrivilegeEvaluatorConfig extends WebSecurityConfigurerAdapter {
+	static class NullWebInvocationPrivilegeEvaluatorConfig {
 
-		NullWebInvocationPrivilegeEvaluatorConfig() {
-			super(true);
-		}
-
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+			TestHttpSecurity.disableDefaults(http);
 			http.formLogin();
+			return http.build();
 		}
 
 	}
 
 	@Configuration
 	@EnableWebSecurity
-	static class FilterChainProxyBuilderIgnoringConfig extends WebSecurityConfigurerAdapter {
+	@EnableWebMvc
+	static class FilterChainProxyBuilderIgnoringConfig {
 
-		@Override
-		public void configure(WebSecurity web) {
-			// @formatter:off
-			web
-				.ignoring()
-					.antMatchers("/resources/**");
-			// @formatter:on
+		@Bean
+		WebSecurityCustomizer webSecurityCustomizer() {
+			return (web) -> web.ignoring().requestMatchers("/resources/**");
 		}
 
-		@Override
-		protected void configure(HttpSecurity http) throws Exception {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 				.authorizeRequests()
 					.anyRequest().hasRole("USER");
+			return http.build();
 			// @formatter:on
 		}
 
@@ -197,10 +200,11 @@ public class DefaultFiltersTests {
 
 	@Configuration
 	@EnableWebSecurity
-	static class DefaultFiltersConfigPermitAll extends WebSecurityConfigurerAdapter {
+	static class DefaultFiltersConfigPermitAll {
 
-		@Override
-		protected void configure(HttpSecurity http) {
+		@Bean
+		SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+			return http.build();
 		}
 
 	}

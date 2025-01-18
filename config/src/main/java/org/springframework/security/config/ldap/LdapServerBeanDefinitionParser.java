@@ -86,6 +86,16 @@ public class LdapServerBeanDefinitionParser implements BeanDefinitionParser {
 
 	private static final String UNBOUNDID_CONTAINER_CLASSNAME = "org.springframework.security.ldap.server.UnboundIdContainer";
 
+	private static final boolean unboundIdPresent;
+
+	private static final boolean apacheDsPresent;
+
+	static {
+		ClassLoader classLoader = LdapServerBeanDefinitionParser.class.getClassLoader();
+		unboundIdPresent = ClassUtils.isPresent(UNBOUNID_CLASSNAME, classLoader);
+		apacheDsPresent = ClassUtils.isPresent(APACHEDS_CLASSNAME, classLoader);
+	}
+
 	@Override
 	public BeanDefinition parse(Element elt, ParserContext parserContext) {
 		String url = elt.getAttribute(ATT_URL);
@@ -104,7 +114,7 @@ public class LdapServerBeanDefinitionParser implements BeanDefinitionParser {
 		if (StringUtils.hasText(managerDn)) {
 			if (!StringUtils.hasText(managerPassword)) {
 				parserContext.getReaderContext()
-						.error("You must specify the " + ATT_PASSWORD + " if you supply a " + managerDn, elt);
+					.error("You must specify the " + ATT_PASSWORD + " if you supply a " + managerDn, elt);
 			}
 			contextSource.getPropertyValues().addPropertyValue("userDn", managerDn);
 			contextSource.getPropertyValues().addPropertyValue("password", managerPassword);
@@ -135,9 +145,10 @@ public class LdapServerBeanDefinitionParser implements BeanDefinitionParser {
 		contextSource.addPropertyValue("userDn", "uid=admin,ou=system");
 		contextSource.addPropertyValue("password", "secret");
 		BeanDefinition embeddedLdapServerConfigBean = BeanDefinitionBuilder
-				.rootBeanDefinition(EmbeddedLdapServerConfigBean.class).getBeanDefinition();
+			.rootBeanDefinition(EmbeddedLdapServerConfigBean.class)
+			.getBeanDefinition();
 		String embeddedLdapServerConfigBeanName = parserContext.getReaderContext()
-				.generateBeanName(embeddedLdapServerConfigBean);
+			.generateBeanName(embeddedLdapServerConfigBean);
 		parserContext.registerBeanComponent(
 				new BeanComponentDefinition(embeddedLdapServerConfigBean, embeddedLdapServerConfigBeanName));
 		contextSource.setFactoryMethodOnBean("createEmbeddedContextSource", embeddedLdapServerConfigBeanName);
@@ -153,8 +164,8 @@ public class LdapServerBeanDefinitionParser implements BeanDefinitionParser {
 		ldapContainer.getPropertyValues().addPropertyValue("port", getPort(element));
 		if (parserContext.getRegistry().containsBeanDefinition(BeanIds.EMBEDDED_APACHE_DS)
 				|| parserContext.getRegistry().containsBeanDefinition(BeanIds.EMBEDDED_UNBOUNDID)) {
-			parserContext.getReaderContext().error("Only one embedded server bean is allowed per application context",
-					element);
+			parserContext.getReaderContext()
+				.error("Only one embedded server bean is allowed per application context", element);
 		}
 		String beanId = resolveBeanId(mode);
 		if (beanId != null) {
@@ -184,11 +195,11 @@ public class LdapServerBeanDefinitionParser implements BeanDefinitionParser {
 	}
 
 	private boolean isApacheDsEnabled(String mode) {
-		return "apacheds".equals(mode) || ClassUtils.isPresent(APACHEDS_CLASSNAME, getClass().getClassLoader());
+		return "apacheds".equals(mode) || apacheDsPresent;
 	}
 
 	private boolean isUnboundidEnabled(String mode) {
-		return "unboundid".equals(mode) || ClassUtils.isPresent(UNBOUNID_CLASSNAME, getClass().getClassLoader());
+		return "unboundid".equals(mode) || unboundIdPresent;
 	}
 
 	private String getPort(Element element) {
@@ -222,11 +233,11 @@ public class LdapServerBeanDefinitionParser implements BeanDefinitionParser {
 		}
 
 		private int getPort() {
-			if (ClassUtils.isPresent(APACHEDS_CLASSNAME, getClass().getClassLoader())) {
+			if (apacheDsPresent) {
 				ApacheDSContainer apacheDSContainer = this.applicationContext.getBean(ApacheDSContainer.class);
 				return apacheDSContainer.getLocalPort();
 			}
-			if (ClassUtils.isPresent(UNBOUNID_CLASSNAME, getClass().getClassLoader())) {
+			if (unboundIdPresent) {
 				UnboundIdContainer unboundIdContainer = this.applicationContext.getBean(UnboundIdContainer.class);
 				return unboundIdContainer.getPort();
 			}

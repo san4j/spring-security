@@ -167,7 +167,7 @@ public class TokenBasedRememberMeServices extends AbstractRememberMeServices {
 
 	private long getTokenExpiryTime(String[] cookieTokens) {
 		try {
-			return new Long(cookieTokens[1]);
+			return Long.valueOf(cookieTokens[1]);
 		}
 		catch (NumberFormatException nfe) {
 			throw new InvalidCookieException(
@@ -238,8 +238,8 @@ public class TokenBasedRememberMeServices extends AbstractRememberMeServices {
 		setCookie(new String[] { username, Long.toString(expiryTime), this.encodingAlgorithm.name(), signatureValue },
 				tokenLifetime, request, response);
 		if (this.logger.isDebugEnabled()) {
-			this.logger.debug(
-					"Added remember-me cookie for user '" + username + "', expiry: '" + new Date(expiryTime) + "'");
+			this.logger
+				.debug("Added remember-me cookie for user '" + username + "', expiry: '" + new Date(expiryTime) + "'");
 		}
 	}
 

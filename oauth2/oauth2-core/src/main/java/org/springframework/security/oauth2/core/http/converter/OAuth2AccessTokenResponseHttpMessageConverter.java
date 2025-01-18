@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2024 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,7 +49,7 @@ public class OAuth2AccessTokenResponseHttpMessageConverter
 
 	private static final Charset DEFAULT_CHARSET = StandardCharsets.UTF_8;
 
-	private static final ParameterizedTypeReference<Map<String, Object>> STRING_OBJECT_MAP = new ParameterizedTypeReference<Map<String, Object>>() {
+	private static final ParameterizedTypeReference<Map<String, Object>> STRING_OBJECT_MAP = new ParameterizedTypeReference<>() {
 	};
 
 	private GenericHttpMessageConverter<Object> jsonMessageConverter = HttpMessageConverters.getJsonMessageConverter();
@@ -73,7 +73,7 @@ public class OAuth2AccessTokenResponseHttpMessageConverter
 			HttpInputMessage inputMessage) throws HttpMessageNotReadableException {
 		try {
 			Map<String, Object> tokenResponseParameters = (Map<String, Object>) this.jsonMessageConverter
-					.read(STRING_OBJECT_MAP.getType(), null, inputMessage);
+				.read(STRING_OBJECT_MAP.getType(), null, inputMessage);
 			return this.accessTokenResponseConverter.convert(tokenResponseParameters);
 		}
 		catch (Exception ex) {
@@ -88,7 +88,7 @@ public class OAuth2AccessTokenResponseHttpMessageConverter
 			throws HttpMessageNotWritableException {
 		try {
 			Map<String, Object> tokenResponseParameters = this.accessTokenResponseParametersConverter
-					.convert(tokenResponse);
+				.convert(tokenResponse);
 			this.jsonMessageConverter.write(tokenResponseParameters, STRING_OBJECT_MAP.getType(),
 					MediaType.APPLICATION_JSON, outputMessage);
 		}
